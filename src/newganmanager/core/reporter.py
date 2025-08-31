@@ -1,5 +1,5 @@
 from dhooks import Webhook, Embed, File
-from xmlparser import XML_Parser
+from .xmlparser import XML_Parser
 
 
 class Reporter:
