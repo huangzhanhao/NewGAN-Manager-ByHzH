@@ -1,7 +1,7 @@
-import random
-import os
-from xmlparser import XML_Parser
 import logging
+import os
+import random
+from .xmlparser import XML_Parser
 
 
 class Mapper:

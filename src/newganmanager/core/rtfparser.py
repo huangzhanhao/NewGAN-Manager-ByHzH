@@ -63,23 +63,35 @@ class RTF_Parser:
 
         RTF文件应包含类似以下格式的行：
         | UID       | Nat       | 2nd Nat   | Name                            |           |           |           |
-        | 2000472008| ESP       | BAS       | Pepe Sáenz                      | 1         | 12        | 1         |
-
-        正则表达式各部分说明：
-        (\|\s*[0-9]{4,}\s*)            - 匹配UID字段（至少4位数字）
-        (\|\s*([A-Z]{3})*\s*)+         - 匹配国家代码字段（3个大写字母）
-        (\|[\s*\w*\.*\-*]+)            - 匹配名称字段（可包含字母、数字、空格、点和连字符）
-        (\|[\s*\d+]+){3}               - 匹配后面3个数值字段
-        \|                             - 结尾的管道符
+        | 2000472008| ESP       | USA       | Pepe Sáenz                      | 1         | 12        | 1         |
+        中文数据库的RTF文件应包含类似以下格式的行：
+        | UID       | Nat       | 2nd Nat   | Name                            |           |           |           |
+        | 2000472008| 西班牙     | 美国       | 扎克·布劳顿                      | 1         | 12        | 1         |
         """
         # 使用原始字符串避免转义警告
-        rtf_regex = re.compile(r'(\|\s*[0-9]{4,}\s*)'
-                               r'(\|\s*([A-Z]{3})*\s*)+'
-                               r'(\|[\s*\w*\.*\-*]+)'
-                               r'(\|[\s*\d+]+){3}\|')
-        rtf = open(path, 'r', encoding="UTF-8")
-        rtf_data = rtf.read()
-        rtf.close()
+        rtf_regex = re.compile(
+            r'(\|\s*[0-9]{4,}\s*)'           # 匹配UID字段（至少4位数字）
+            r'(\|\s*([A-Z]{3})*\s*)+'        # 匹配国家代码字段（3个大写字母）
+            r'(\|[\s*\w*\.*\-*]+)'           # 匹配名称字段（可包含字母、数字、空格、点和连字符）
+            r'(\|[\s*\d+]+){3}\|'            # 匹配后面3个数值字段
+        )
+        # 添加新的正则表达式用于匹配包含中文的RTF文件(待优化)
+        # rtf_regex_chn = re.compile(
+        #     r"(\|\s*[0-9]{4,}\s*)"                  # 匹配UID字段（至少4位数字）
+        #     r"(\|\s*([\u4e00-\u9fff]+)*\s*)+"       # 匹配国家代码字段（中文字符）
+        #     r"(\|[\s*\w*\.*\-*\u4e00-\u9fff*]+)"    # 匹配名称字段（可包含字母、数字、空格、点、连字符和中文字符）
+        #     r"(\|[\s*\d+]+){3}\|"                   # 匹配后面3个数值字段
+        # )
+        try:
+            # 确保路径字符串正确编码，路径编码使用utf-8
+            normalized_path = path.encode('utf-8').decode('utf-8')
+            with open(normalized_path, 'r', encoding="UTF-8") as rtf:
+                rtf_data = rtf.read()
+        except FileNotFoundError:
+            raise
+        except TypeError:
+            raise
+        # 检查RTF数据是否匹配预期的格式模式
         if rtf_regex.search(rtf_data):
             return True
         return False
