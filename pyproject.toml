@@ -12,11 +12,14 @@ formal_name = "NewGAN Manager"
 description = "NewGAN Replacement Management Tool"
 icon = "src/newganmanager/resources/logo"
 sources = ['src/newganmanager', 'src/config_manager.py', 'src/newganmanager/core/mapper.py', 'src/newganmanager/core/profile_manager.py', 'src/newganmanager/core/rtfparser.py', 'src/newganmanager/core/xmlparser.py', 'src/newganmanager/core/reporter.py']
-requires = ["dhooks==1.1.4"]
+requires = [
+    "dhooks==1.1.4",
+    "requests==2.32.3"
+]
 
 [tool.briefcase.app.newganmanager.macOS]
 requires = [
-    'toga-cocoa==0.4.0',
+    'toga-cocoa==0.5.2',
 ]
 
 [tool.briefcase.app.newganmanager.linux]

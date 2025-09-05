@@ -202,41 +202,35 @@ class NewGANManager(toga.App):
         )
 
         usage = toga.Command(
-            lambda e=None, u="https://www.youtube.com/watch?v=iJqZNp0nomM": self.open_link(u),
+            lambda e=None: [self.open_link("https://www.youtube.com/watch?v=iJqZNp0nomM"),
+                            self.open_link("https://www.bilibili.com/video/BV1ew411h759")],
             text='User Guide',
             group=toga.Group.HELP,
             section=1
-        )
-
-        usage_cn = toga.Command(
-            lambda e=None, u="https://www.bilibili.com/video/BV1ew411h759": self.open_link(u),
-            text="中文使用教程",
-            group=toga.Group.HELP,
-            section=2,
         )
 
         troubleshooting = toga.Command(
             lambda e=None, u="https://github.com/Maradonna90/NewGAN-Manager/wiki/Troubleshooting": self.open_link(u),
             text='Troubleshooting',
             group=toga.Group.HELP,
-            section=3
+            section=2
         )
 
         faq = toga.Command(
             lambda e=None, u="https://github.com/Maradonna90/NewGAN-Manager/wiki/FAQ": self.open_link(u),
             text='FAQ',
             group=toga.Group.HELP,
-            section=4
+            section=3
         )
 
         discord = toga.Command(
             lambda e=None, u="https://discord.gg/UfRpJVc": self.open_link(u),
             text='Discord',
             group=toga.Group.HELP,
-            section=5
+            section=4
         )
 
-        self.commands.add(check_logs, check_logs_file, usage, usage_cn, troubleshooting, discord, faq)
+        self.commands.add(check_logs, check_logs_file, usage, troubleshooting, discord, faq)
 
     def open_link(self, url):
         """
