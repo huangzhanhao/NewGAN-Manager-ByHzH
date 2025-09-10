@@ -16,6 +16,7 @@ from .core.mapper import Mapper
 from .core.rtfparser import RTF_Parser
 from .core.reporter import Reporter
 from .core.xmlparser import XML_Parser
+from .app_log_tab import LogTab
 import webbrowser
 import requests
 
@@ -46,9 +47,9 @@ class NewGANManager(toga.App):
         然后我们创建一个主窗口（名称与应用程序匹配），并显示主窗口。
         """
 
-        # Initialize logging section first
-        # 首先初始化日志部分
-        self.log_section = LogSection(self)
+        # Initialization Log Tab
+        # 初始化日志标签页
+        self.log_tab = LogTab(self)
 
         # Log application startup information
         # 记录应用启动信息
@@ -69,7 +70,7 @@ class NewGANManager(toga.App):
 
         # Initialize GUI interface
         # 初始化GUI界面
-        self.main_box = toga.Box()  # Main interface box 主界面框
+        self.main_box = toga.Box(style=Pack(direction=COLUMN, margin=30, align_items='center'))  # Main interface box 主界面框
 
         # Setup application menu
         # 设置应用程序菜单
@@ -87,7 +88,7 @@ class NewGANManager(toga.App):
         # TOP Profiles
         # 顶部 配置文件
         self.profile_section = ProfileSection(self, label_width, button_width)
-        self.main_box.add(self.profile_section.box)
+        self.main_box.add(self.profile_section.create_box)
         self.main_box.add(self.profile_section.sel_box)
 
         # MID Path selections
@@ -126,37 +127,26 @@ class NewGANManager(toga.App):
 
         # Report bad image
         # 报告不良图像
-        self.report_section = ReportSection(self, label_width)
+        # self.report_section = ReportSection(self, label_width)
         # self.main_box.add(self.report_section.box)
 
         # Store references for backward compatibility
         # 存储引用以保持向后兼容性
-        self.rep_lab = self.report_section.uid_label  # Report label 报告标签
-        self.rep_inp = self.report_section.uid_input  # Report input 报告输入
-        self.rep_img = self.report_section.image_view  # Report image 报告图像
-        self.rep_btn = self.report_section.report_button  # Report button 报告按钮
-
-        # Add log section to main box
-        # 将日志区域添加到主框中
-        self.main_box.add(self.log_section.box)
-
-        # Store references for backward compatibility
-        # 存储引用以保持向后兼容性
-        self.log_area = self.log_section.area  # Log area 日志区域
-
-        # Finalize UI configuration
-        # 完成UI配置
-        self.main_box.style.update(direction=COLUMN, margin=30, align_items='center')
+        # self.rep_lab = self.report_section.uid_label  # Report label 报告标签
+        # self.rep_inp = self.report_section.uid_input  # Report input 报告输入
+        # self.rep_img = self.report_section.image_view  # Report image 报告图像
+        # self.rep_btn = self.report_section.report_button  # Report button 报告按钮
 
         #创建标签页容器
         option_container = toga.OptionContainer()
         main_tab = toga.Box()
         #main_tab.add(self.main_box)
         profile_tab = toga.Box()
-        log_tab = toga.Box()
         option_container.content.append("Main", main_tab)
         option_container.content.append("Profile", profile_tab)
-        option_container.content.append("Log", log_tab)
+        option_container.content.append("Log", self.log_tab.log_box)
+
+        self.main_box.add(option_container)
 
         # Create and show main window
         # 创建并显示主窗口
@@ -198,18 +188,6 @@ class NewGANManager(toga.App):
         """
         # CREATE MENUBAR
         # 创建菜单栏
-        logs_group = toga.Group("Logs", parent=None, order=80)
-        check_logs = toga.Command(
-            lambda e=None: setattr(self.main_window, 'content', self.path_section.dir_box),
-            text='Check Logs',
-            group=logs_group
-        )
-
-        check_logs_file = toga.Command(
-            lambda e=None: setattr(self.main_window, "content", self.log_section.box),
-            text="Check Logs file",
-            group=logs_group,
-        )
 
         usage = toga.Command(
             lambda e=None: [self.open_link("https://www.youtube.com/watch?v=iJqZNp0nomM"),
@@ -240,7 +218,7 @@ class NewGANManager(toga.App):
             section=4
         )
 
-        self.commands.add(check_logs, check_logs_file, usage, troubleshooting, discord, faq)
+        self.commands.add( usage, troubleshooting, discord, faq)
 
     def open_link(self, url):
         """
@@ -264,7 +242,7 @@ class NewGANManager(toga.App):
             self.gen_btn.enabled = False
             self.dir_btn.enabled = False
             self.rtf_btn.enabled = False
-            self.rep_btn.enabled = False
+            # self.rep_btn.enabled = False
         elif self.profile_manager and (
             self.profile_manager.prf_cfg.get("img_dir", "") == ""
             or self.profile_manager.prf_cfg.get("rtf", "") == ""
@@ -272,12 +250,12 @@ class NewGANManager(toga.App):
             self.gen_btn.enabled = False
             self.dir_btn.enabled = value
             self.rtf_btn.enabled = value
-            self.rep_btn.enabled = value
+            # self.rep_btn.enabled = value
         else:
             self.gen_btn.enabled = value
             self.dir_btn.enabled = value
             self.rtf_btn.enabled = value
-            self.rep_btn.enabled = value
+            # self.rep_btn.enabled = value
 
     async def _throw_error(self, msg):
         """
@@ -347,23 +325,9 @@ class SourceSelection(toga.Selection):
         super().__init__(id=id, style=style, items=items, on_change=on_change, enabled=enabled)
 
     def add_item(self, item):
-        """
-        Add a selection item
-        添加选择项
-
-        Args:
-            item: Item to be added 要添加的项
-        """
         self._items.append(item)
 
     def remove_item(self, item):
-        """
-        Remove a selection item
-        移除选择项
-
-        Args:
-            item: Item to be removed 要移除的项
-        """
         row = self._items.find(item)
         self._items.remove(row)
 
@@ -384,15 +348,12 @@ class ProfileSection:
             button_width: Button width 按钮宽度
         """
         self.app = app  # Application instance 应用实例
-        
-        # Create profile components
-        # 创建配置文件组件
+
         self.create_label = toga.Label(text="Create Profile: ", style=Pack(width=label_width, margin=5))
         self.create_input = toga.TextInput(placeholder="Enter your profile name", style=Pack(direction=ROW, margin=5, flex=1))
         self.create_button = toga.Button(text="Create", on_press=self._create_profile, style=Pack(width=button_width, margin=5))
-        
-        # Create profile box with children directly
-        self.box = toga.Box(
+
+        self.create_box = toga.Box(
             children=[self.create_label, self.create_input, self.create_button],
             style=Pack(direction=ROW, margin_bottom=10, align_items='center')
         )
@@ -405,8 +366,7 @@ class ProfileSection:
         )
         self.selection_list.value = self.app.profile_manager.cur_prf  # Current profile 当前配置文件
         self.delete_button = toga.Button(text="Delete", on_press=self._delete_profile, style=Pack(width=button_width, margin=5))
-        
-        # Create selection box with children directly
+
         self.sel_box = toga.Box(
             children=[self.select_label, self.selection_list, self.delete_button],
             style=Pack(direction=ROW, margin_bottom=10)
@@ -520,7 +480,6 @@ class PathSelectionSection:
             style=Pack(width=button_width, margin=5)
         )
 
-        # Create Box with children directly
         self.dir_box = toga.Box(
             children=[self.dir_label, self.dir_input, self.dir_button],
             style=Pack(direction=ROW, margin_bottom=10)
@@ -541,7 +500,6 @@ class PathSelectionSection:
             style=Pack(width=button_width, margin=5)
         )
 
-        # Create Box with children directly
         self.rtf_box = toga.Box(
             children=[self.rtf_label, self.rtf_input, self.rtf_button],
             style=Pack(direction=ROW, margin_bottom=10)
@@ -625,11 +583,11 @@ class GenerationSection:
             text=app.mode_info.get("Generate", "Generates mapping from scratch."), 
             style=Pack(margin=5, flex=1)
         )
-        
+
         self.mode_selection = SourceSelection(
             items=list(app.mode_info.keys()),
             on_change=self.update_label,
-            style=Pack(direction=ROW, margin=5, width=label_width)
+            style=Pack(direction=ROW, width=label_width, margin=5)
         )
         self.mode_selection.value = "Generate"  # Default mode 默认模式
         
@@ -639,12 +597,9 @@ class GenerationSection:
             style=Pack(margin=5)
         )
 
-        # Create a spacer to push the switch to the right
-        spacer = toga.Box(style=Pack(flex=1))
-
         # Create mode selection box with children
         self.mode_box = toga.Box(
-            children=[self.mode_label, self.mode_selection, self.mode_info_label, spacer, self.allow_duplicates],
+            children=[self.mode_label, self.mode_selection, self.mode_info_label, self.allow_duplicates],
             style=Pack(direction=ROW, margin_bottom=10)
         )
 
@@ -668,7 +623,7 @@ class GenerationSection:
 
         self.status_progress_box = toga.Box(
             children=[self.progress_bar, self.status_label],
-            style=Pack(direction=ROW, margin_bottom=10)
+            style=Pack(direction=ROW)
         )
 
         # Create generation box with children
@@ -881,99 +836,3 @@ class ReportSection:
                 await self.app._throw_error("Player with ID {} doesn't exist!".format(uid))
                 self.image_view.image = toga.Image("resources/logo.png")
                 self.uid_input.value = ""
-
-
-class LogSection:
-    """
-    Log section UI components and functionality
-    日志部分UI组件和功能
-    """
-    def __init__(self, app):
-        """
-        Initialize log section UI
-        初始化日志部分UI
-
-        Args:
-            app: Application instance 应用实例
-        """
-        self.app = app  # Application instance 应用实例
-
-        # Logging setup
-        # 日志设置
-        formatter = logging.Formatter("%(asctime)s | %(name)s: %(message)s")
-        self.app.logger.setLevel(logging.DEBUG)
-
-        # Create FileHandler to update the log area in newgan.log
-        # 创建文件处理器以更新newgan.log中的日志
-        fh = logging.FileHandler(str(self.app.paths.app)+'/newgan.log')
-        fh.setFormatter(formatter)
-        self.app.logger.addHandler(fh)
-
-        # Create StreamHandler to update the log area in the GUI
-        # 创建流处理器以更新GUI中的日志
-        gui_handler = logging.StreamHandler(self)
-        gui_handler.setFormatter(formatter)
-        self.app.logger.addHandler(gui_handler)
-
-        # Setup top row with label and clear button
-        # 顶部行包含标签和清除按钮
-        self.label = toga.Label(
-            "Application Log:", 
-            style=Pack(margin=5, flex=1)
-        )
-        self.clear_button = toga.Button(
-            text="Clear Logs", 
-            on_press=self._clear_logs,
-            style=Pack(margin=5)
-        )
-        
-        self.top_row = toga.Box(
-            children=[self.label, self.clear_button],
-            style=Pack(direction=ROW, align_items='center')
-        )
-
-        # Setup log area
-        # 设置日志区域
-        self.area = toga.MultilineTextInput(
-            readonly=True, 
-            flex=1,
-            style=Pack(margin=5, height=150)
-        )
-
-        # Setup container box
-        # 设置容器框
-        self.box = toga.Box(
-            children=[self.top_row, self.area],
-            style=Pack(direction=COLUMN, margin_top=10)
-        )
-
-    def write(self, text):
-        """
-        Write log text
-        写入日志文本
-
-        Args:
-            text: Text to write 要写入的文本
-        """
-        # Ensure UI updates happen on the main thread
-        # 确保UI更新在主线程中进行
-        if hasattr(self, 'area') and self.area:
-            self.area.value += text
-            self.area.scroll_to_bottom()
-
-    def flush(self):
-        """
-        Flush log stream
-        刷新日志流
-        """
-        pass
-
-    def _clear_logs(self, widget):
-        """
-        Clear the log area
-        清除日志区域
-
-        Args:
-            widget: The widget that triggered the event 触发事件的组件
-        """
-        self.area.value = ""

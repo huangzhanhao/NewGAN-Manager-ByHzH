@@ -1,5 +1,6 @@
 from .config_manager import Config_Manager
 import os
+import logging
 from shutil import copyfileobj
 import shutil
 
@@ -24,6 +25,10 @@ class Profile_Manager(Config_Manager):
         self.cur_prf = name
         # Set application root directory  设置应用程序根目录
         self.root_dir = root_dir
+        
+        # Initialize logger
+        # 初始化日志记录器
+        self.logger = logging.getLogger("NewGAN App")
 
     def migrate_config(self):
         """
