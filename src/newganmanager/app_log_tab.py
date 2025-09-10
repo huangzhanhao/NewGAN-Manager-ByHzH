@@ -38,7 +38,7 @@ class LogTab:
 
         # Setup top row with label and clear button
         # 顶部行包含标签和清除按钮
-        self.label = toga.Label(
+        self.log_label = toga.Label(
             "Application Log:", 
             style=Pack(margin=5, flex=1)
         )
@@ -49,7 +49,7 @@ class LogTab:
         )
         
         self.top_row = toga.Box(
-            children=[self.label, self.clear_button],
+            children=[self.log_label, self.clear_button],
             style=Pack(direction=ROW, align_items='center')
         )
 
@@ -63,7 +63,7 @@ class LogTab:
 
         # Setup container box
         # 设置容器框
-        self.log_box = toga.Box(
+        self.log_tab_box = toga.Box(
             children=[self.top_row, self.log_area],
             style=Pack(direction=COLUMN, margin=5)
         )

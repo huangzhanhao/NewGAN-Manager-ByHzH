@@ -17,6 +17,7 @@ from .core.rtfparser import RTF_Parser
 from .core.reporter import Reporter
 from .core.xmlparser import XML_Parser
 from .app_log_tab import LogTab
+from .app_main_tab import MainTab
 import webbrowser
 import requests
 
@@ -68,10 +69,6 @@ class NewGANManager(toga.App):
                           "Preserve":  "Preserves already replaced faces",
                           "Generate": "Generates mapping from scratch."}
 
-        # Initialize GUI interface
-        # 初始化GUI界面
-        self.main_box = toga.Box(style=Pack(direction=COLUMN, margin=30, align_items='center'))  # Main interface box 主界面框
-
         # Setup application menu
         # 设置应用程序菜单
         self._setup_menu()
@@ -80,39 +77,38 @@ class NewGANManager(toga.App):
         # 设置Discord Webhook地址用于报告功能
         self.hook = "https://discord.com/api/webhooks/796137178328989768/ETMNtPVb-PHuZPayC5G5MZD24tdDi5jmG6jAgjZXg0FDOXjy-VIabATXPco05qLIr4ro"
 
-        # Create UI sections with specified label width
-        # 使用指定标签宽度创建UI部分
-        label_width = 110  # Label width 标签宽度
-        button_width = 70  # Label width 标签宽度
+        # Create main tab
+        self.main_tab = MainTab(self)
+        
+        # Create option container and add tabs
+        # 创建选项卡容器并添加标签页
+        option_container = toga.OptionContainer()
+        option_container.content.append("Main", self.main_tab.main_tab_box)
+        profile_tab = toga.Box()
+        option_container.content.append("Profile", profile_tab)
+        option_container.content.append("Log", self.log_tab.log_tab_box)
 
-        # TOP Profiles
-        # 顶部 配置文件
-        self.profile_section = ProfileSection(self, label_width, button_width)
-        self.main_box.add(self.profile_section.create_box)
-        self.main_box.add(self.profile_section.sel_box)
+        # Create and show main window
+        # 创建并显示主窗口
+        self.main_window = toga.MainWindow(title=self.formal_name, size=(1000, 600))
+        self.main_window.content = option_container
+        self.main_window.show()
 
-        # MID Path selections
-        # 中部 资源路径选择
-        self.path_section = PathSelectionSection(self, label_width, button_width)
-        self.main_box.add(self.path_section.dir_box)
-        self.main_box.add(self.path_section.rtf_box)
-
+        # Enable buttons and finalize startup
+        # 启用按钮并完成启动
+        self.set_btns(True)
+        
         # Store references for backward compatibility
         # 存储引用以保持向后兼容性
+        self.profile_section = self.main_tab.profile_section
+        self.path_section = self.main_tab.path_section
+        self.gen_section = self.main_tab.gen_section
         self.prfsel_box = self.profile_section.sel_box  # Profile selection box 配置文件选择框
         self.prfsel_lst = self.profile_section.selection_list  # Profile list 配置文件列表
         self.dir_inp = self.path_section.dir_input  # Directory create_input 目录输入
         self.dir_btn = self.path_section.dir_button  # Directory button 目录按钮
         self.rtf_inp = self.path_section.rtf_input  # RTF input RTF输入
         self.rtf_btn = self.path_section.rtf_button  # RTF button RTF按钮
-
-        # Generation mode selection
-        # 生成模式选择
-        self.gen_section = GenerationSection(self, label_width)
-        self.main_box.add(self.gen_section.mode_box)
-
-        # Store references for backward compatibility
-        # 存储引用以保持向后兼容性
         self.genmde_lab = self.gen_section.mode_label  # Generation mode label 生成模式标签
         self.genmdeinfo_lab = self.gen_section.mode_info_label  # Generation mode info label 生成模式信息标签
         self.gendup = self.gen_section.allow_duplicates  # Allow duplicates 允许重复
@@ -120,43 +116,8 @@ class NewGANManager(toga.App):
         self.gen_btn = self.gen_section.generate_button  # Generate button 生成按钮
         self.gen_lab = self.gen_section.status_label  # Status label 状态标签
         self.gen_prg = self.gen_section.progress_bar  # Progress bar 进度条
-
-        # BOTTOM Generation
-        # 底部 生成
-        self.main_box.add(self.gen_section.gen_box)
-
-        # Report bad image
-        # 报告不良图像
-        # self.report_section = ReportSection(self, label_width)
-        # self.main_box.add(self.report_section.box)
-
-        # Store references for backward compatibility
-        # 存储引用以保持向后兼容性
-        # self.rep_lab = self.report_section.uid_label  # Report label 报告标签
-        # self.rep_inp = self.report_section.uid_input  # Report input 报告输入
-        # self.rep_img = self.report_section.image_view  # Report image 报告图像
-        # self.rep_btn = self.report_section.report_button  # Report button 报告按钮
-
-        #创建标签页容器
-        option_container = toga.OptionContainer()
-        main_tab = toga.Box()
-        #main_tab.add(self.main_box)
-        profile_tab = toga.Box()
-        option_container.content.append("Main", main_tab)
-        option_container.content.append("Profile", profile_tab)
-        option_container.content.append("Log", self.log_tab.log_box)
-
-        self.main_box.add(option_container)
-
-        # Create and show main window
-        # 创建并显示主窗口
-        self.main_window = toga.MainWindow(title=self.formal_name, size=(1000, 600))
-        self.main_window.content = self.main_box
-        self.main_window.show()
-
-        # Enable buttons and finalize startup
-        # 启用按钮并完成启动
-        self.set_btns(True)
+        
+        return option_container
 
     def _setup_application_data(self):
         """
@@ -178,6 +139,8 @@ class NewGANManager(toga.App):
             self.logger.info("Loading current profile")
             self.profile_manager = Profile_Manager(Config_Manager().get_latest_prf(user_config_path), app_path)
             self.profile_manager.migrate_config()
+            # Store reference to config manager for backward compatibility
+            self.profile_manager.config_manager = Config_Manager()
         except Exception as e:
             self.logger.error("Failed to setup application data: {}".format(e))
 
@@ -303,536 +266,3 @@ class NewGANManager(toga.App):
                 self.open_link("https://github.com/Maradonna90/NewGAN-Manager/releases/latest")
         except AttributeError:
             self.logger.info("Version attribute not available")
-
-
-class SourceSelection(toga.Selection):
-    """
-    Custom dropdown selection component that extends toga.Selection functionality
-    自定义的下拉选择组件，扩展了toga.Selection功能
-    """
-    def __init__(self, id=None, style=None, items=None, on_change=None, enabled=True):
-        """
-        Initialize the SourceSelection component
-        初始化SourceSelection组件
-        
-        Args:
-            id: Component ID 组件ID
-            style: Component style 组件样式
-            items: List of selection items 选择项列表
-            on_change: Change callback function 变更回调函数
-            enabled: Whether the component is enabled 是否启用组件
-        """
-        super().__init__(id=id, style=style, items=items, on_change=on_change, enabled=enabled)
-
-    def add_item(self, item):
-        self._items.append(item)
-
-    def remove_item(self, item):
-        row = self._items.find(item)
-        self._items.remove(row)
-
-
-class ProfileSection:
-    """
-    Profile section UI components and functionality
-    配置文件部分UI组件和功能
-    """
-    def __init__(self, app, label_width, button_width):
-        """
-        Initialize profile section UI
-        初始化配置文件部分UI
-
-        Args:
-            app: Application instance 应用实例
-            label_width: Label width 标签宽度
-            button_width: Button width 按钮宽度
-        """
-        self.app = app  # Application instance 应用实例
-
-        self.create_label = toga.Label(text="Create Profile: ", style=Pack(width=label_width, margin=5))
-        self.create_input = toga.TextInput(placeholder="Enter your profile name", style=Pack(direction=ROW, margin=5, flex=1))
-        self.create_button = toga.Button(text="Create", on_press=self._create_profile, style=Pack(width=button_width, margin=5))
-
-        self.create_box = toga.Box(
-            children=[self.create_label, self.create_input, self.create_button],
-            style=Pack(direction=ROW, margin_bottom=10, align_items='center')
-        )
-        
-        self.select_label = toga.Label(text="Select Profile: ", style=Pack(width=label_width, margin=5))
-        self.selection_list = SourceSelection(
-            items=list(self.app.profile_manager.config["Profile"].keys()), 
-            on_change=self._set_profile_status,
-            style=Pack(direction=ROW, margin=5, flex=1)
-        )
-        self.selection_list.value = self.app.profile_manager.cur_prf  # Current profile 当前配置文件
-        self.delete_button = toga.Button(text="Delete", on_press=self._delete_profile, style=Pack(width=button_width, margin=5))
-
-        self.sel_box = toga.Box(
-            children=[self.select_label, self.selection_list, self.delete_button],
-            style=Pack(direction=ROW, margin_bottom=10)
-        )
-
-    def _create_profile(self, widget):
-        """
-        Create profile (internal method)
-        创建配置文件 (内部方法)
-
-        Args:
-            widget: The widget that triggered the event 触发事件的组件
-        """
-        name = self.create_input.value
-        if not name or not name.strip():
-            self.app._throw_error("The Profile is Null!")
-            return
-        self.app.profile_manager.create_profile(name)
-        self.selection_list.add_item(name)
-        self.selection_list.value = name
-        self.create_input.value = None
-        self._refresh_inp(True)
-        self.app.set_btns(True)
-
-    def _delete_profile(self, widget):
-        """
-        Delete profile (internal method)
-        删除配置文件 (内部方法)
-
-        Args:
-            widget: The widget that triggered the event 触发事件的组件
-        """
-        prf = self.selection_list.value
-        result = self.app.profile_manager.delete_profile(prf)
-        if not result:
-            # 处理删除失败的情况，显示错误信息
-            self.app._throw_error("Can't delete 'No Profile'")
-            return
-        self.selection_list.remove_item(prf)
-        self.selection_list.value = "No Profile"
-        self._refresh_inp(True)
-        self.app.set_btns(False)
-
-    def _set_profile_status(self, e):
-        """
-        Set profile status (internal method)
-        设置配置文件状态 (内部方法)
-
-        Args:
-            e: Event object 事件对象
-        """
-        self.app.logger.info("switch profile: {}".format(e.value))
-        if e.value is None:
-            self.app.logger.info("catch none {}".format(self.app.profile_manager.cur_prf))
-        elif e.value == self.app.profile_manager.cur_prf:
-            self.app.logger.info("catch same values")
-
-        else:
-            name = e.value
-            self.app.profile_manager.load_profile(name)
-            self._refresh_inp()
-            self.app.set_btns(True)
-            Config_Manager().save_config(str(self.app.paths.app)+"/.user/cfg.json", self.app.profile_manager.config)
-
-    def _refresh_inp(self, clear=False):
-        """
-        Refresh input buttons (internal method)
-        刷新输入按钮 (内部方法)
-
-        Args:
-            clear: Whether to clear inputs 是否清空输入
-        """
-        self.app.logger.info("Refresh Input Buttons")
-        if clear:
-            self.app.dir_inp.value = None
-            self.app.rtf_inp.value = None
-        else:
-            self.app.dir_inp.value = self.app.profile_manager.prf_cfg['img_dir']
-            self.app.rtf_inp.value = self.app.profile_manager.prf_cfg['rtf']
-
-
-class PathSelectionSection:
-    """
-    Path selection section UI components and functionality
-    资源路径选择部分UI组件和功能
-    """
-    def __init__(self, app, label_width, button_width):
-        """
-        Initialize path selection section UI
-        初始化资源路径选择部分UI
-        
-        Args:
-            app: Application instance 应用实例
-            label_width: Label width 标签宽度
-            button_width: Button width 按钮宽度
-        """
-        self.app = app  # Application instance 应用实例
-
-        # Images Directory selection components
-        # 头像包目录选择组件
-        self.dir_label = toga.Label(text="Images Directory: ", style=Pack(width=label_width, margin=5))
-        self.dir_input = toga.TextInput(
-            readonly=True, 
-            value=self.app.profile_manager.prf_cfg['img_dir'],
-            style=Pack(direction=ROW, margin=5, flex=1)
-        )
-        self.dir_button = toga.Button(
-            text="Browse",
-            on_press=self.action_select_folder_dialog,
-            enabled=False,
-            style=Pack(width=button_width, margin=5)
-        )
-
-        self.dir_box = toga.Box(
-            children=[self.dir_label, self.dir_input, self.dir_button],
-            style=Pack(direction=ROW, margin_bottom=10)
-        )
-
-        # RTF file selection components
-        # RTF文件选择组件
-        self.rtf_label = toga.Label(text="RTF File: ", style=Pack(width=label_width, margin=5))
-        self.rtf_input = toga.TextInput(
-            readonly=True, 
-            value=self.app.profile_manager.prf_cfg['rtf'],
-            style=Pack(direction=ROW, margin=5, flex=1)
-        )
-        self.rtf_button = toga.Button(
-            text="Browse", 
-            on_press=self.action_open_file_dialog, 
-            enabled=False,
-            style=Pack(width=button_width, margin=5)
-        )
-
-        self.rtf_box = toga.Box(
-            children=[self.rtf_label, self.rtf_input, self.rtf_button],
-            style=Pack(direction=ROW, margin_bottom=10)
-        )
-
-    async def action_select_folder_dialog(self, widget):
-        """
-        Action for select folder dialog (async method)
-        选择文件夹对话框操作 (异步方法)
-
-        Args:
-            widget: The widget that triggered the event 触发事件的组件
-        """
-        self.app.logger.info("Select Folder...")
-        try:
-            dialog = toga.SelectFolderDialog(title="Select image root folder")
-            path_name = await self.app.main_window.dialog(dialog)
-            if path_name:
-                path_name = str(path_name)
-                self.app.logger.info(path_name)
-                self.dir_input.value = path_name + "/"
-                self.app.profile_manager.prf_cfg["img_dir"] = path_name + "/"
-                Config_Manager().save_config(str(self.app.paths.app) + "/.user/" + self.app.profile_manager.cur_prf + ".json", self.app.profile_manager.prf_cfg)
-                self.app.set_btns(True)
-            self.app.set_btns(True)
-        except Exception:
-            self.app.logger.error("Fatal error in main loop", exc_info=True)
-            pass
-
-    async def action_open_file_dialog(self, widget):
-        """
-        Action for open file dialog (async method)
-        打开文件对话框操作 (异步方法)
-
-        Args:
-            widget: The widget that triggered the event 触发事件的组件
-        """
-        self.app.logger.info("Select File...")
-        try:
-            dialog = toga.OpenFileDialog(title="Open RTF file", multiple_select=False, file_types=["rtf"])
-            fname = await self.app.main_window.dialog(dialog)
-            self.app.logger.info("Created file-dialog")
-            if fname is not None:
-                fname = str(fname)
-                self.rtf_input.value = fname
-                self.app.profile_manager.prf_cfg["rtf"] = fname
-                self.app.logger.info("RTF file: " + fname)
-                Config_Manager().save_config(str(self.app.paths.app) + "/.user/" + self.app.profile_manager.cur_prf + ".json", self.app.profile_manager.prf_cfg)
-            else:
-                self.app.profile_manager.prf_cfg["rtf"] = ""
-                self.rtf_input.value = ""
-                Config_Manager().save_config(str(self.app.paths.app) + "/.user/" + self.app.profile_manager.cur_prf + ".json", self.app.profile_manager.prf_cfg)
-            self.app.set_btns(True)
-        except Exception:
-            self.app.logger.error("Fatal error in main loop", exc_info=True)
-            pass
-
-
-class GenerationSection:
-    """
-    Generation section UI components and functionality
-    生成部分UI组件和功能
-    """
-    def __init__(self, app, label_width):
-        """
-        Initialize generation section UI
-        初始化生成部分UI
-        
-        Args:
-            app: Application instance 应用实例
-            label_width: Label width 标签宽度
-        """
-        self.app = app  # Application instance 应用实例
-
-        # Mode selection components
-        # 模式选择框组件
-        self.mode_label = toga.Label(text="Mode: ", style=Pack(width=label_width, margin=5))
-        
-        # 先创建mode_info_label，以防mode_selection触发on_change事件
-        self.mode_info_label = toga.Label(
-            text=app.mode_info.get("Generate", "Generates mapping from scratch."), 
-            style=Pack(margin=5, flex=1)
-        )
-
-        self.mode_selection = SourceSelection(
-            items=list(app.mode_info.keys()),
-            on_change=self.update_label,
-            style=Pack(direction=ROW, width=label_width, margin=5)
-        )
-        self.mode_selection.value = "Generate"  # Default mode 默认模式
-        
-        self.allow_duplicates = toga.Switch(
-            text="Allow Duplicates?", 
-            value=True,
-            style=Pack(margin=5)
-        )
-
-        # Create mode selection box with children
-        self.mode_box = toga.Box(
-            children=[self.mode_label, self.mode_selection, self.mode_info_label, self.allow_duplicates],
-            style=Pack(direction=ROW, margin_bottom=10)
-        )
-
-        # Generation components
-        # 生成框组件
-        self.generate_button = toga.Button(
-            text="Replace Faces", 
-            on_press=self._replace_faces, 
-            enabled=False,
-            style=Pack(margin=5)
-        )
-
-        self.status_label = toga.Label(
-            text="", 
-            style=Pack(flex=0.2, margin=5)
-        )
-        self.progress_bar = toga.ProgressBar(
-            max=100,
-            style=Pack(flex=0.8, margin=5)
-        )
-
-        self.status_progress_box = toga.Box(
-            children=[self.progress_bar, self.status_label],
-            style=Pack(direction=ROW)
-        )
-
-        # Create generation box with children
-        self.gen_box = toga.Box(
-            children=[self.generate_button, self.status_progress_box],
-            style=Pack(direction=COLUMN, flex=1)
-        )
-
-    def update_label(self, widget):
-        """
-        Update label
-        更新标签
-
-        Args:
-            widget: The widget that triggered the event 触发事件的组件
-        """
-        self.app.logger.info("Updating generation label")
-        # 使用get方法避免KeyError，并提供默认值
-        self.mode_info_label.text = self.app.mode_info.get(widget.value, "Unknown mode")
-
-    async def _replace_faces(self, widget):
-        """
-        Replace faces (async internal method)
-        替换头像 (异步内部方法)
-
-        Args:
-            widget: The widget that triggered the event 触发事件的组件
-        """
-        self.app.logger.info("Start Replace Faces")
-        rtf = self.app.profile_manager.prf_cfg['rtf']
-        img_dir = self.app.profile_manager.prf_cfg['img_dir']
-        profile = self.app.profile_manager.cur_prf
-        mode = self.mode_selection.value
-        if not os.path.isfile(rtf):
-            await self.app._throw_error("The RTF file doesn't exist!")
-            self.progress_bar.stop()
-            self.app.profile_manager.prf_cfg['rtf'] = ''
-            return
-        if not os.path.isdir(img_dir):
-            await self.app._throw_error("The image directory doesn't exist!")
-            self.progress_bar.stop()
-            self.app.profile_manager.prf_cfg['img_dir'] = ''
-            return
-
-        # Check if valid image_directory contains all the needed subfolders
-        # 检查有效的图像目录是否包含所有需要的子文件夹
-        img_dirs = set()
-        for entry in os.scandir(img_dir):
-            if entry.is_dir():
-                img_dirs.add(entry.name)
-        for fp_dir in self.app.facepack_dirs:
-            if fp_dir not in img_dirs:
-                # Ask user if they want to create the missing directory
-                # 询问用户是否要创建缺失的目录
-                dialog = toga.QuestionDialog(title="Missing Directory", message="Folder '{}' is missing in the image directory. Do you want to create it and continue?".format(fp_dir))
-                user_choose = await self.app.main_window.dialog(dialog)
-
-                # User chose to create the directory
-                # 用户选择创建目录
-                if user_choose:
-                    try:
-                        os.makedirs(os.path.join(img_dir, fp_dir), exist_ok=True)
-                        self.app.logger.info("Created directory: {}".format(fp_dir))
-                        continue
-                    except Exception as e:
-                        await self.app._throw_error("Failed to create directory {}: {}".format(fp_dir, str(e)))
-                        self.progress_bar.stop()
-                        return
-                else:
-                    # User chose not to create the directory, show error and stop
-                    # 用户选择不创建目录，显示错误并停止
-                    await self.app._throw_error("Folder {} is missing in the image directory".format(fp_dir))
-                    self.progress_bar.stop()
-                    return
-
-        self.app.logger.info("rtf: {}".format(rtf))
-        self.app.logger.info("img_dir: {}".format(img_dir))
-        self.app.logger.info("profile: {}".format(profile))
-        self.app.logger.info("mode: {}".format(mode))
-        self.app.set_btns(False)
-        self.progress_bar.start()
-        self.status_label.text =  "Parsing RTF"
-        await asyncio.sleep(0.1)
-        rtf_parser = RTF_Parser()
-        if not rtf_parser.is_rtf_valid(rtf):
-            await self.app._throw_error("The RTF file is invalid!")
-            self.progress_bar.stop()
-            return
-        rtf_data = rtf_parser.parse_rtf(rtf)
-        self.progress_bar.value += 20
-        self.status_label.text = "Map player to ethnicity"
-        await asyncio.sleep(0.1)
-        mapping_data = Mapper(img_dir, self.app.profile_manager).generate_mapping(rtf_data, mode, self.app.gendup.value)
-        self.progress_bar.value += 60
-        self.status_label.text = "Generate config.xml"
-        await asyncio.sleep(0.1)
-        try:
-            self.app.profile_manager.write_xml(mapping_data)
-        except FileNotFoundError as e:
-            self.app.logger.error(f"Configuration template file not found: {e}")
-            await self.app._throw_error(f"Configuration template file not found: {e}")
-            self.progress_bar.stop()
-            return
-        except PermissionError as e:
-            self.app.logger.error(f"Permission denied when accessing files: {e}")
-            await self.app._throw_error(f"Permission denied when accessing files: {e}")
-            self.progress_bar.stop()
-            return
-        except Exception as e:
-            self.app.logger.error(f"Unexpected error while writing XML: {e}")
-            await self.app._throw_error(f"Unexpected error while writing XML: {e}")
-            self.progress_bar.stop()
-            return
-        # save profile metadata (used pics and config.xml)
-        # 保存配置文件元数据（使用的图片和config.xml）
-        self.status_label.text = "Save metadata for profile"
-        self.progress_bar.value += 10
-        await asyncio.sleep(0.1)
-        Config_Manager().save_config(str(self.app.paths.app)+"/.user/"+profile+".json", self.app.profile_manager.prf_cfg)
-        self.progress_bar.value += 10
-        await asyncio.sleep(0.1)
-        self.status_label.text = "Finished! :)"
-        await asyncio.sleep(0.1)
-        await self.app._show_info("Finished! :)")
-        self.progress_bar.stop()
-        self.progress_bar.value = 0
-        self.status_label.text = ''
-        self.app.set_btns(True)
-
-
-class ReportSection:
-    """
-    Report section UI components and functionality
-    报告部分UI组件和功能
-    """
-    def __init__(self, app, label_width):
-        """
-        Initialize report section UI
-        初始化报告部分UI
-
-        Args:
-            app: Application instance 应用实例
-            label_width: Label width 标签宽度
-        """
-        self.app = app  # Application instance 应用实例
-        
-        self.uid_label = toga.Label(
-            text="Player UID: ", 
-            style=Pack(width=label_width, margin=5)
-        )
-        self.uid_input = toga.TextInput(
-            on_change=self.change_image,
-            style=Pack(direction=ROW, margin=5, flex=1)
-        )
-        self.image_view = toga.ImageView(
-            toga.Image("resources/logo.png"),
-            style=Pack(height=180, width=180)
-        )
-        self.report_button = toga.Button(
-            text="Report",
-            on_press=self.send_report,
-            enabled=False,
-            style=Pack(margin=5)
-        )
-
-        self.box = toga.Box(
-            children=[self.uid_label, self.uid_input, self.image_view, self.report_button],
-            style=Pack(direction=COLUMN, margin_top=20)
-        )
-
-    def change_image(self, id):
-        """
-        Change image preview
-        更改图像预览
-
-        Args:
-            id: Input component 输入组件
-        """
-        self.app.logger.info("try to change image preview")
-        uid = id.value
-        if len(uid) > 4:
-            try:
-                img_path = XML_Parser().get_imgpath_from_uid(self.app.profile_manager.prf_cfg['img_dir']+"config.xml", uid)
-                img_path = self.app.profile_manager.prf_cfg['img_dir']+img_path+".png"
-                self.image_view.image = toga.Image(img_path)
-                self.app.logger.info("change image preview to: {}".format(img_path))
-            except Exception as e:
-                self.app.logger.info("changing image preview failed!")
-                self.app.logger.info(e)
-                return
-        return
-
-    async def send_report(self, e):
-        """
-        Send report (async method)
-        发送报告 (异步方法)
-
-        Args:
-            e: Event object 事件对象
-        """
-        uid = self.uid_input.value
-        if len(uid) > 4:
-            rep = Reporter(self.app.hook, self.app.profile_manager.prf_cfg['img_dir']+"config.xml")
-            res = rep.send_report(uid)
-            if res:
-                await self.app._show_info("Thanks for Reporting!")
-                self.image_view.image = toga.Image("resources/logo.png")
-                self.uid_input.value = ""
-            else:
-                await self.app._throw_error("Player with ID {} doesn't exist!".format(uid))
-                self.image_view.image = toga.Image("resources/logo.png")
-                self.uid_input.value = ""
