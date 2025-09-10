@@ -5,6 +5,7 @@ NewGAN Replacement Management Tool - 重构版
 import asyncio
 
 import toga
+from toga.style import Pack
 from toga.style.pack import COLUMN, ROW
 import os
 import logging
@@ -68,9 +69,7 @@ class NewGANManager(toga.App):
 
         # Initialize GUI interface
         # 初始化GUI界面
-        self.logger.info("Creating GUI")
         self.main_box = toga.Box()  # Main interface box 主界面框
-        self.logger.info("Created main box")
 
         # Setup application menu
         # 设置应用程序菜单
@@ -82,17 +81,18 @@ class NewGANManager(toga.App):
 
         # Create UI sections with specified label width
         # 使用指定标签宽度创建UI部分
-        # label_width = 125  # Label width 标签宽度
+        label_width = 110  # Label width 标签宽度
+        button_width = 70  # Label width 标签宽度
 
         # TOP Profiles
         # 顶部 配置文件
-        self.profile_section = ProfileSection(self, label_width=125, button_width=75)
+        self.profile_section = ProfileSection(self, label_width, button_width)
         self.main_box.add(self.profile_section.box)
         self.main_box.add(self.profile_section.sel_box)
 
         # MID Path selections
         # 中部 资源路径选择
-        self.path_section = PathSelectionSection(self, label_width=125, button_width=75)
+        self.path_section = PathSelectionSection(self, label_width, button_width)
         self.main_box.add(self.path_section.dir_box)
         self.main_box.add(self.path_section.rtf_box)
 
@@ -100,14 +100,14 @@ class NewGANManager(toga.App):
         # 存储引用以保持向后兼容性
         self.prfsel_box = self.profile_section.sel_box  # Profile selection box 配置文件选择框
         self.prfsel_lst = self.profile_section.selection_list  # Profile list 配置文件列表
-        self.dir_inp = self.path_section.dir_input  # Directory input 目录输入
+        self.dir_inp = self.path_section.dir_input  # Directory create_input 目录输入
         self.dir_btn = self.path_section.dir_button  # Directory button 目录按钮
         self.rtf_inp = self.path_section.rtf_input  # RTF input RTF输入
         self.rtf_btn = self.path_section.rtf_button  # RTF button RTF按钮
 
         # Generation mode selection
         # 生成模式选择
-        self.gen_section = GenerationSection(self, label_width=125)
+        self.gen_section = GenerationSection(self, label_width)
         self.main_box.add(self.gen_section.mode_box)
 
         # Store references for backward compatibility
@@ -126,7 +126,7 @@ class NewGANManager(toga.App):
 
         # Report bad image
         # 报告不良图像
-        self.report_section = ReportSection(self, label_width=125)
+        self.report_section = ReportSection(self, label_width)
         # self.main_box.add(self.report_section.box)
 
         # Store references for backward compatibility
@@ -147,6 +147,16 @@ class NewGANManager(toga.App):
         # Finalize UI configuration
         # 完成UI配置
         self.main_box.style.update(direction=COLUMN, margin=30, align_items='center')
+
+        #创建标签页容器
+        option_container = toga.OptionContainer()
+        main_tab = toga.Box()
+        #main_tab.add(self.main_box)
+        profile_tab = toga.Box()
+        log_tab = toga.Box()
+        option_container.content.append("Main", main_tab)
+        option_container.content.append("Profile", profile_tab)
+        option_container.content.append("Log", log_tab)
 
         # Create and show main window
         # 创建并显示主窗口
@@ -294,11 +304,8 @@ class NewGANManager(toga.App):
         info = await self.main_window.dialog(dialog)
         return info
 
+    #No usage
     async def check_for_update(self):
-        """
-        Check for updates (async method)
-        检查更新 (异步方法)
-        """
         try:
             r = requests.get("https://raw.githubusercontent.com/Maradonna90/NewGAN-Manager/master/version", timeout=10)
             r.raise_for_status()  # Raise an exception for bad status codes
@@ -377,40 +384,33 @@ class ProfileSection:
             button_width: Button width 按钮宽度
         """
         self.app = app  # Application instance 应用实例
-        self.label_width = label_width  # Label width 标签宽度
-        self.button_width = button_width  # Button width 按钮宽度
-        self.box = toga.Box()  # Create profile box 创建配置文件框
-        self.sel_box = toga.Box()  # Selection profile box 选择配置文件框
-        self.input = toga.TextInput(placeholder="Enter your profile name")  # Text input field 输入框
-        self.create_label = toga.Label(text="Create Profile: ")  # Create profile label 创建配置文件标签
-        self.select_label = toga.Label(text="Select Profile: ")  # Select profile label 选择配置文件标签
-        self.selection_list = SourceSelection(items=list(self.app.profile_manager.config["Profile"].keys()), on_change=self._set_profile_status)  # Profile selection list 配置文件选择列表
+        
+        # Create profile components
+        # 创建配置文件组件
+        self.create_label = toga.Label(text="Create Profile: ", style=Pack(width=label_width, margin=5))
+        self.create_input = toga.TextInput(placeholder="Enter your profile name", style=Pack(direction=ROW, margin=5, flex=1))
+        self.create_button = toga.Button(text="Create", on_press=self._create_profile, style=Pack(width=button_width, margin=5))
+        
+        # Create profile box with children directly
+        self.box = toga.Box(
+            children=[self.create_label, self.create_input, self.create_button],
+            style=Pack(direction=ROW, margin_bottom=10, align_items='center')
+        )
+        
+        self.select_label = toga.Label(text="Select Profile: ", style=Pack(width=label_width, margin=5))
+        self.selection_list = SourceSelection(
+            items=list(self.app.profile_manager.config["Profile"].keys()), 
+            on_change=self._set_profile_status,
+            style=Pack(direction=ROW, margin=5, flex=1)
+        )
         self.selection_list.value = self.app.profile_manager.cur_prf  # Current profile 当前配置文件
-        self.create_button = toga.Button(text="Create", on_press=self._create_profile)  # Create button 创建按钮
-        self.delete_button = toga.Button(text="Delete", on_press=self._delete_profile)  # Delete button 删除按钮
-
-        # Setup profile creation box
-        # 设置创建配置文件框
-        self.box.add(self.create_label)
-        self.box.add(self.input)
-        self.box.add(self.create_button)
-        self.create_label.style.update(width=self.label_width)
-        self.create_button.style.update(width=self.button_width)
-        self.input.style.update(direction=ROW, margin=(0, 20), flex=1)
-
-        # Setup profile selection box
-        # 设置选择配置文件框
-        self.sel_box.add(self.select_label)
-        self.sel_box.add(self.selection_list)
-        self.sel_box.add(self.delete_button)
-        self.select_label.style.update(width=self.label_width)
-        self.delete_button.style.update(width=self.button_width)
-        self.selection_list.style.update(direction=ROW, margin=(0, 20), flex=1)
-
-        # Setup box styles
-        # 设置框样式
-        self.box.style.update(margin_bottom=10)
-        self.sel_box.style.update(margin_bottom=10)
+        self.delete_button = toga.Button(text="Delete", on_press=self._delete_profile, style=Pack(width=button_width, margin=5))
+        
+        # Create selection box with children directly
+        self.sel_box = toga.Box(
+            children=[self.select_label, self.selection_list, self.delete_button],
+            style=Pack(direction=ROW, margin_bottom=10)
+        )
 
     def _create_profile(self, widget):
         """
@@ -420,14 +420,14 @@ class ProfileSection:
         Args:
             widget: The widget that triggered the event 触发事件的组件
         """
-        name = self.input.value
+        name = self.create_input.value
         if not name or not name.strip():
             self.app._throw_error("The Profile is Null!")
             return
         self.app.profile_manager.create_profile(name)
         self.selection_list.add_item(name)
         self.selection_list.value = name
-        self.input.value = None
+        self.create_input.value = None
         self._refresh_inp(True)
         self.app.set_btns(True)
 
@@ -504,45 +504,48 @@ class PathSelectionSection:
             button_width: Button width 按钮宽度
         """
         self.app = app  # Application instance 应用实例
-        self.label_width = label_width  # Label width 标签宽度
-        self.button_width = button_width  # Button width 按钮宽度
 
-        # Directory selection components
-        # 目录选择组件
-        self.dir_box = toga.Box()  # Directory selection box 目录选择框
-        self.dir_label = toga.Label(text="Images Directory: ")  # Directory selection label 目录选择标签
-        self.dir_input = toga.TextInput(readonly=True, value=self.app.profile_manager.prf_cfg['img_dir'])  # Directory input field 目录输入框
-        self.dir_button = toga.Button(text="Browse",on_press=self.action_select_folder_dialog,enabled=False)  # Directory selection button 目录选择按钮
+        # Images Directory selection components
+        # 头像包目录选择组件
+        self.dir_label = toga.Label(text="Images Directory: ", style=Pack(width=label_width, margin=5))
+        self.dir_input = toga.TextInput(
+            readonly=True, 
+            value=self.app.profile_manager.prf_cfg['img_dir'],
+            style=Pack(direction=ROW, margin=5, flex=1)
+        )
+        self.dir_button = toga.Button(
+            text="Browse",
+            on_press=self.action_select_folder_dialog,
+            enabled=False,
+            style=Pack(width=button_width, margin=5)
+        )
+
+        # Create Box with children directly
+        self.dir_box = toga.Box(
+            children=[self.dir_label, self.dir_input, self.dir_button],
+            style=Pack(direction=ROW, margin_bottom=10)
+        )
 
         # RTF file selection components
         # RTF文件选择组件
-        self.rtf_box = toga.Box()  # RTF file box RTF文件框
-        self.rtf_label = toga.Label(text="RTF File: ")  # RTF file label RTF文件标签
-        self.rtf_input = toga.TextInput(readonly=True, value=self.app.profile_manager.prf_cfg['rtf'])  # RTF file input field RTF文件输入框
-        self.rtf_button = toga.Button(text="Browse", on_press=self.action_open_file_dialog, enabled=False)  # RTF file selection button RTF文件选择按钮
+        self.rtf_label = toga.Label(text="RTF File: ", style=Pack(width=label_width, margin=5))
+        self.rtf_input = toga.TextInput(
+            readonly=True, 
+            value=self.app.profile_manager.prf_cfg['rtf'],
+            style=Pack(direction=ROW, margin=5, flex=1)
+        )
+        self.rtf_button = toga.Button(
+            text="Browse", 
+            on_press=self.action_open_file_dialog, 
+            enabled=False,
+            style=Pack(width=button_width, margin=5)
+        )
 
-        # Setup directory selection UI
-        # 设置目录选择UI
-        self.dir_box.add(self.dir_label)
-        self.dir_box.add(self.dir_input)
-        self.dir_box.add(self.dir_button)
-        self.dir_label.style.update(width=self.label_width)
-        self.dir_button.style.update(width=self.button_width)
-        self.dir_input.style.update(direction=ROW, margin=(0, 20), flex=1)
-
-        # Setup RTF file selection UI
-        # 设置RTF文件选择UI
-        self.rtf_box.add(self.rtf_label)
-        self.rtf_box.add(self.rtf_input)
-        self.rtf_box.add(self.rtf_button)
-        self.rtf_label.style.update(width=self.label_width)
-        self.rtf_button.style.update(width=self.button_width)
-        self.rtf_input.style.update(direction=ROW, margin=(0, 20), flex=1)
-
-        # Setup box styles
-        # 设置框样式
-        self.dir_box.style.update(margin_bottom=10)
-        self.rtf_box.style.update(margin_bottom=10)
+        # Create Box with children directly
+        self.rtf_box = toga.Box(
+            children=[self.rtf_label, self.rtf_input, self.rtf_button],
+            style=Pack(direction=ROW, margin_bottom=10)
+        )
 
     async def action_select_folder_dialog(self, widget):
         """
@@ -612,44 +615,67 @@ class GenerationSection:
             label_width: Label width 标签宽度
         """
         self.app = app  # Application instance 应用实例
-        self.label_width = label_width  # Label width 标签宽度
 
         # Mode selection components
         # 模式选择框组件
-        self.mode_box = toga.Box()  # Mode selection box 模式选择框
-        self.mode_label = toga.Label(text="Mode: ")  # Mode label 模式标签
-        self.mode_info_label = toga.Label(text=app.mode_info["Generate"])  # Mode info label 模式信息标签
-        self.allow_duplicates = toga.Switch(text="Allow Duplicates?", value=True)  # Allow duplicates switch 允许重复开关
-        self.mode_selection = SourceSelection(items=list(app.mode_info.keys()),on_change=self.update_label)  # Mode selection list 模式选择列表
+        self.mode_label = toga.Label(text="Mode: ", style=Pack(width=label_width, margin=5))
+        
+        # 先创建mode_info_label，以防mode_selection触发on_change事件
+        self.mode_info_label = toga.Label(
+            text=app.mode_info.get("Generate", "Generates mapping from scratch."), 
+            style=Pack(margin=5, flex=1)
+        )
+        
+        self.mode_selection = SourceSelection(
+            items=list(app.mode_info.keys()),
+            on_change=self.update_label,
+            style=Pack(direction=ROW, margin=5, width=label_width)
+        )
         self.mode_selection.value = "Generate"  # Default mode 默认模式
+        
+        self.allow_duplicates = toga.Switch(
+            text="Allow Duplicates?", 
+            value=True,
+            style=Pack(margin=5)
+        )
+
+        # Create a spacer to push the switch to the right
+        spacer = toga.Box(style=Pack(flex=1))
+
+        # Create mode selection box with children
+        self.mode_box = toga.Box(
+            children=[self.mode_label, self.mode_selection, self.mode_info_label, spacer, self.allow_duplicates],
+            style=Pack(direction=ROW, margin_bottom=10)
+        )
 
         # Generation components
         # 生成框组件
-        self.gen_box = toga.Box()  # Generation box 生成框
-        self.generate_button = toga.Button(text="Replace Faces", on_press=self._replace_faces, enabled=False)  # Replace faces button 替换面部按钮
-        self.status_label = toga.Label(text="")  # Status label 状态标签
-        self.progress_bar = toga.ProgressBar(max=100)  # Progress bar 进度条
+        self.generate_button = toga.Button(
+            text="Replace Faces", 
+            on_press=self._replace_faces, 
+            enabled=False,
+            style=Pack(margin=5)
+        )
 
-        # Setup mode selection UI
-        # 设置模式选择框UI
-        self.mode_box.add(self.mode_label)
-        self.mode_box.add(self.mode_selection)
-        self.mode_box.add(self.mode_info_label)
-        self.mode_box.add(self.allow_duplicates)
-        self.mode_label.style.update(width=self.label_width, margin_top=7)
-        self.mode_info_label.style.update(margin_top=7)
-        self.mode_selection.style.update(direction=ROW, margin=(0, 20), flex=1)
-        self.allow_duplicates.style.update(margin_top=7, margin_left=20)
-        self.mode_box.style.update(margin_bottom=20)
+        self.status_label = toga.Label(
+            text="", 
+            style=Pack(flex=0.2, margin=5)
+        )
+        self.progress_bar = toga.ProgressBar(
+            max=100,
+            style=Pack(flex=0.8, margin=5)
+        )
 
-        # Setup generation UI
-        # 设置生成UI
-        self.gen_box.add(self.generate_button)
-        self.gen_box.add(self.status_label)
-        self.gen_box.add(self.progress_bar)
-        self.progress_bar.style.update(width=570, align_items="center")
-        self.status_label.style.update(margin_top=10, margin_bottom=10, width=100, align_items="center")
-        self.gen_box.style.update(direction=COLUMN, align_items='center')
+        self.status_progress_box = toga.Box(
+            children=[self.progress_bar, self.status_label],
+            style=Pack(direction=ROW, margin_bottom=10)
+        )
+
+        # Create generation box with children
+        self.gen_box = toga.Box(
+            children=[self.generate_button, self.status_progress_box],
+            style=Pack(direction=COLUMN, flex=1)
+        )
 
     def update_label(self, widget):
         """
@@ -660,7 +686,8 @@ class GenerationSection:
             widget: The widget that triggered the event 触发事件的组件
         """
         self.app.logger.info("Updating generation label")
-        self.mode_info_label.text = self.app.mode_info[widget.value]
+        # 使用get方法避免KeyError，并提供默认值
+        self.mode_info_label.text = self.app.mode_info.get(widget.value, "Unknown mode")
 
     async def _replace_faces(self, widget):
         """
@@ -787,21 +814,30 @@ class ReportSection:
             label_width: Label width 标签宽度
         """
         self.app = app  # Application instance 应用实例
-        self.label_width = label_width  # Label width 标签宽度
-        self.box = toga.Box()  # Report box 报告框
-        self.uid_label = toga.Label(text="Player UID: ")  # Player UID label 玩家UID标签
-        self.uid_input = toga.TextInput(on_change=self.change_image)  # UID input field UID输入框
-        self.image_view = toga.ImageView(toga.Image("resources/logo.png"))  # Image view 图像视图
-        self.report_button = toga.Button(text="Report",on_press=self.send_report,enabled=False)  # Report button 报告按钮
+        
+        self.uid_label = toga.Label(
+            text="Player UID: ", 
+            style=Pack(width=label_width, margin=5)
+        )
+        self.uid_input = toga.TextInput(
+            on_change=self.change_image,
+            style=Pack(direction=ROW, margin=5, flex=1)
+        )
+        self.image_view = toga.ImageView(
+            toga.Image("resources/logo.png"),
+            style=Pack(height=180, width=180)
+        )
+        self.report_button = toga.Button(
+            text="Report",
+            on_press=self.send_report,
+            enabled=False,
+            style=Pack(margin=5)
+        )
 
-        self.box.add(self.uid_label)
-        self.box.add(self.uid_input)
-        self.box.add(self.image_view)
-        self.box.add(self.report_button)
-        self.uid_label.style.update(width=self.label_width, margin_top=10)
-        self.uid_input.style.update(direction=ROW, margin=(0, 20), flex=1)
-        self.image_view.style.update(height=180, width=180)
-        self.box.style.update(margin_top=20)
+        self.box = toga.Box(
+            children=[self.uid_label, self.uid_input, self.image_view, self.report_button],
+            style=Pack(direction=COLUMN, margin_top=20)
+        )
 
     def change_image(self, id):
         """
@@ -813,7 +849,7 @@ class ReportSection:
         """
         self.app.logger.info("try to change image preview")
         uid = id.value
-        if len(uid) >= 7:
+        if len(uid) > 4:
             try:
                 img_path = XML_Parser().get_imgpath_from_uid(self.app.profile_manager.prf_cfg['img_dir']+"config.xml", uid)
                 img_path = self.app.profile_manager.prf_cfg['img_dir']+img_path+".png"
@@ -834,7 +870,7 @@ class ReportSection:
             e: Event object 事件对象
         """
         uid = self.uid_input.value
-        if len(uid) >= 7:
+        if len(uid) > 4:
             rep = Reporter(self.app.hook, self.app.profile_manager.prf_cfg['img_dir']+"config.xml")
             res = rep.send_report(uid)
             if res:
@@ -879,30 +915,37 @@ class LogSection:
         gui_handler.setFormatter(formatter)
         self.app.logger.addHandler(gui_handler)
 
-        # Setup top row
-        # 设置顶部行
-        # Top row with label and clear button
+        # Setup top row with label and clear button
         # 顶部行包含标签和清除按钮
-        self.top_row = toga.Box()  # Top row 顶部行
-        self.label = toga.Label("Application Log:")  # Log label 日志标签
-        self.clear_button = toga.Button(text="Clear Logs", on_press=self._clear_logs)  # Clear logs button 清除日志按钮
-        self.top_row.add(self.label)
-        self.top_row.add(self.clear_button)
-        self.label.style.update(margin_top=10, margin_bottom=5, flex=1)
-        self.clear_button.style.update(margin_top=10, margin_bottom=5, margin_left=10)
-        self.top_row.style.update(direction=ROW, align_items='center')
+        self.label = toga.Label(
+            "Application Log:", 
+            style=Pack(margin=5, flex=1)
+        )
+        self.clear_button = toga.Button(
+            text="Clear Logs", 
+            on_press=self._clear_logs,
+            style=Pack(margin=5)
+        )
+        
+        self.top_row = toga.Box(
+            children=[self.label, self.clear_button],
+            style=Pack(direction=ROW, align_items='center')
+        )
 
         # Setup log area
         # 设置日志区域
-        self.area = toga.MultilineTextInput(readonly=True, flex=1)  # Log multiline text input 日志多行文本输入框
-        self.area.style.update(margin_bottom=10, height=150)
+        self.area = toga.MultilineTextInput(
+            readonly=True, 
+            flex=1,
+            style=Pack(margin=5, height=150)
+        )
 
         # Setup container box
         # 设置容器框
-        self.box = toga.Box()  # Container box 容器框
-        self.box.style.update(direction=COLUMN, margin_top=10)
-        self.box.add(self.top_row)
-        self.box.add(self.area)
+        self.box = toga.Box(
+            children=[self.top_row, self.area],
+            style=Pack(direction=COLUMN, margin_top=10)
+        )
 
     def write(self, text):
         """
@@ -924,11 +967,11 @@ class LogSection:
         刷新日志流
         """
         pass
-        
+
     def _clear_logs(self, widget):
         """
-        Clear the log area for GUI
-        清空日志区域
+        Clear the log area
+        清除日志区域
 
         Args:
             widget: The widget that triggered the event 触发事件的组件

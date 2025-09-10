@@ -1,0 +1,28 @@
+<record>
+        <!-- resource manager options -->
+
+        <!-- dont preload anything in this folder -->
+        <boolean id="preload" value="false"/>
+
+                <!-- turn off auto mapping -->
+        <boolean id="amap" value="false"/>
+
+                <!-- logo mappings -->
+                <!-- the following XML maps pictures inside this folder into other positions
+                        in the resource system, which allows this folder to be dropped into any
+                        place in the graphics folder and still have the game pick up the graphics
+                        files from the correct places
+                -->
+
+        <list id="maps">
+            <record from="African/African1" to="graphics/pictures/person/1234567/portrait"/>
+            <record from="African/African2" to="graphics/pictures/person/r-2345678/portrait"/>
+            <record from="Caucasian/Caucasian1" to="graphics/pictures/person/3456789/portrait"/>
+            <record from="Caucasian/Caucasian2" to="graphics/pictures/person/r-4567890/portrait"/>
+            <record from="MESA/MESA1" to="graphics/pictures/person/5678/portrait"/>
+            <record from="MESA/MESA2" to="graphics/pictures/person/r-6789/portrait"/>
+            <!-- 测试不匹配的情况 -->
+            <record from="Invalid/Invalid1" to="graphics/pictures/person/123/portrait"/>
+            <record from="Invalid/Invalid2" to="graphics/pictures/person/abc1234/portrait"/>
+        </list>
+</record>
