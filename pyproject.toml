@@ -1,7 +1,7 @@
 [tool.briefcase]
 project_name = "NewGAN Manager"
 bundle = "com.fm"
-version = "1.4.0"
+version = "1.4.2"
 url = "https://github.com/huangzhanhao/NewGAN-Manager-ByHzH"
 license = "GNU General Public License v3 (GPLv3)"
 author = 'Maradonna (gestalt)'
@@ -10,21 +10,27 @@ author_email = "None"
 [tool.briefcase.app.newganmanager]
 formal_name = "NewGAN Manager"
 description = "NewGAN Replacement Management Tool"
-icon = "src/newganmanager/resources/logo"
-sources = ['src/newganmanager', 'src/config_manager.py', 'src/newganmanager/core/mapper.py', 'src/newganmanager/core/profile_manager.py', 'src/newganmanager/core/rtfparser.py', 'src/newganmanager/core/xmlparser.py', 'src/newganmanager/core/reporter.py']
+icon = "src/newganmanager/resources/newganmanager"
+sources = ['src/newganmanager']
+module_name = "newganmanager"
 requires = [
+    "toga>=0.5.2",
+    "toga-core>=0.5.2",
     "dhooks==1.1.4",
-    "requests==2.32.3"
+    "requests==2.32.5",
+    "packaging>=25.0",
+    "travertino>=0.5.2"
 ]
 
 [tool.briefcase.app.newganmanager.macOS]
 requires = [
-    'toga-cocoa==0.5.2',
+    'toga-cocoa>=0.5.2',
+    'rubicon-objc>=0.5.2',
 ]
 
 [tool.briefcase.app.newganmanager.linux]
 requires = [
-    'toga-gtk==0.5.2',
+    'toga-gtk>=0.5.2',
 ]
 system_requires = [
     'libgirepository1.0-dev',
@@ -36,7 +42,7 @@ system_requires = [
 
 [tool.briefcase.app.newganmanager.windows]
 requires = [
-    'toga-winforms==0.5.2',
+    'toga-winforms>=0.5.2',
 ]
 
 ## Mobile deployments

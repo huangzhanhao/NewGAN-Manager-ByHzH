@@ -34,7 +34,6 @@ class NewGANManager(toga.App):
         初始化NewGANManager应用
         """
         super().__init__(formal_name = "NewGAN Manager",app_id = "com.fm.newganmanager",home_page="https://github.com/huangzhanhao/NewGAN-Manager-ByHzH")
-        self.logger = logging.getLogger("NewGAN App")  # 初始化logger属性
 
     def startup(self):
         """
@@ -51,11 +50,6 @@ class NewGANManager(toga.App):
         # Initialization Log Tab
         # 初始化日志标签页
         self.log_tab = LogTab(self)
-
-        # Log application startup information
-        # 记录应用启动信息
-        self.logger.info("Starting Application\n------------------------------------------------")
-        self.logger.info(str(self.paths.app))
 
         # Setup application data and profile
         # 设置应用程序数据和配置文件
@@ -244,6 +238,20 @@ class NewGANManager(toga.App):
         dialog = toga.InfoDialog(title="Info", message=msg)
         info = await self.main_window.dialog(dialog)
         return info
+
+    async def on_exit(self):
+        """
+        Handle application exit event
+        处理应用程序退出事件
+        """
+        # Log application exit information
+        # 记录应用程序退出信息
+        if hasattr(self, 'logger'):
+            self.logger.info("Application is exiting...\n-----------------------------------------")
+        
+        # Call parent's on_exit to ensure proper cleanup
+        # 调用父类的on_exit以确保正确清理
+        return super().on_exit()
 
     #No usage
     async def check_for_update(self):
