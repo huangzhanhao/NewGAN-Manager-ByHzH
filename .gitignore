@@ -40,6 +40,7 @@ ENV/
 # VS Code
 .vscode/
 *.code-workspace
+.qoder
 
 # PyCharm / IntelliJ IDEA
 .idea/

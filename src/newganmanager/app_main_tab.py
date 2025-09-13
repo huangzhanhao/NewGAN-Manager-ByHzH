@@ -1,12 +1,13 @@
 import toga
 from toga.style import Pack
-from toga.style.pack import COLUMN, ROW
+from travertino.constants import COLUMN, ROW
 import os
 import asyncio
 from .core.mapper import Mapper
 from .core.rtfparser import RTF_Parser
 from .core.xmlparser import XML_Parser
 from .core.reporter import Reporter
+from .core.SourceSelection import SourceSelection
 
 
 class MainTab:
@@ -20,98 +21,7 @@ class MainTab:
         label_width = 110
         button_width = 70
 
-        # TOP Profiles
-        self.profile_section = ProfileSection(self.app, label_width, button_width)
-        self.main_tab_box.add(self.profile_section.create_box)
-        self.main_tab_box.add(self.profile_section.sel_box)
-
-        # MID Path selections
-        self.path_section = PathSelectionSection(self.app, label_width, button_width)
-        self.main_tab_box.add(self.path_section.dir_box)
-        self.main_tab_box.add(self.path_section.rtf_box)
-
-        # Generation mode selection
-        self.gen_section = GenerationSection(self.app, label_width)
-        self.main_tab_box.add(self.gen_section.mode_box)
-
-        # BOTTOM Generation
-        self.main_tab_box.add(self.gen_section.gen_box)
-
-        # Store references for backward compatibility (moved to the end)
-        # 存储向后兼容的引用（移到最后）
-        self.app.prfsel_box = self.profile_section.sel_box
-        self.app.prfsel_lst = self.profile_section.selection_list
-        self.app.dir_inp = self.path_section.dir_input
-        self.app.dir_btn = self.path_section.dir_button
-        self.app.rtf_inp = self.path_section.rtf_input
-        self.app.rtf_btn = self.path_section.rtf_button
-        self.app.genmde_lab = self.gen_section.mode_label
-        self.app.genmdeinfo_lab = self.gen_section.mode_info_label
-        self.app.gendup = self.gen_section.allow_duplicates
-        self.app.genmde_lst = self.gen_section.mode_selection
-        self.app.gen_btn = self.gen_section.generate_button
-        self.app.gen_lab = self.gen_section.status_label
-        self.app.gen_prg = self.gen_section.progress_bar
-
-
-class SourceSelection(toga.Selection):
-    """
-    Custom dropdown selection component that extends toga.Selection functionality
-    自定义的下拉选择组件，扩展了toga.Selection功能
-    """
-    def __init__(self, id=None, style=None, items=None, on_change=None, enabled=True):
-        """
-        Initialize the SourceSelection component
-        初始化SourceSelection组件
-
-        Args:
-            id: Component ID 组件ID
-            style: Component style 组件样式
-            items: List of selection items 选择项列表
-            on_change: Change callback function 变更回调函数
-            enabled: Whether the component is enabled 是否启用组件
-        """
-        super().__init__(id=id, style=style, items=items, on_change=on_change, enabled=enabled)
-
-    def add_item(self, item):
-        """
-        Add a selection item
-        添加选择项
-
-        Args:
-            item: Item to be added 要添加的项
-        """
-        self._items.append(item)
-
-    def remove_item(self, item):
-        """
-        Remove a selection item
-        移除选择项
-
-        Args:
-            item: Item to be removed 要移除的项
-        """
-        row = self._items.find(item)
-        self._items.remove(row)
-
-
-class ProfileSection:
-    """
-    Profile section UI components and functionality
-    配置文件部分UI组件和功能
-    """
-    def __init__(self, app, label_width, button_width):
-        """
-        Initialize profile section UI
-        初始化配置文件部分UI
-
-        Args:
-            app: Application instance 应用实例
-            label_width: Label width 标签宽度
-            button_width: Button width 按钮宽度
-        """
-        self.app = app  # Application instance 应用实例
-
+        # TOP Profiles - Create Profile
         self.create_label = toga.Label(text="Create Profile: ", style=Pack(width=label_width, margin=5))
         self.create_input = toga.TextInput(placeholder="Enter your profile name", style=Pack(direction=ROW, margin=5, flex=1))
         self.create_button = toga.Button(text="Create", on_press=self._create_profile, style=Pack(width=button_width, margin=5))
@@ -120,7 +30,9 @@ class ProfileSection:
             children=[self.create_label, self.create_input, self.create_button],
             style=Pack(direction=ROW, margin_bottom=10, align_items='center')
         )
+        self.main_tab_box.add(self.create_box)
 
+        # TOP Profiles - Select Profile
         self.select_label = toga.Label(text="Select Profile: ", style=Pack(width=label_width, margin=5))
         self.selection_list = SourceSelection(
             items=list(self.app.profile_manager.config["Profile"].keys()),
@@ -134,6 +46,121 @@ class ProfileSection:
             children=[self.select_label, self.selection_list, self.delete_button],
             style=Pack(direction=ROW, margin_bottom=10)
         )
+        self.main_tab_box.add(self.sel_box)
+
+        # MID Path selections - Images Directory
+        self.dir_label = toga.Label(text="Images Directory: ", style=Pack(width=label_width, margin=5))
+        self.dir_input = toga.TextInput(
+            readonly=True,
+            value=self.app.profile_manager.prf_cfg['img_dir'],
+            style=Pack(direction=ROW, margin=5, flex=1)
+        )
+        self.dir_button = toga.Button(
+            text="Browse",
+            on_press=self.action_select_folder_dialog,
+            enabled=False,
+            style=Pack(width=button_width, margin=5)
+        )
+
+        self.dir_box = toga.Box(
+            children=[self.dir_label, self.dir_input, self.dir_button],
+            style=Pack(direction=ROW, margin_bottom=10)
+        )
+        self.main_tab_box.add(self.dir_box)
+
+        # MID Path selections - RTF File
+        self.rtf_label = toga.Label(text="RTF File: ", style=Pack(width=label_width, margin=5))
+        self.rtf_input = toga.TextInput(
+            readonly=True,
+            value=self.app.profile_manager.prf_cfg['rtf'],
+            style=Pack(direction=ROW, margin=5, flex=1)
+        )
+        self.rtf_button = toga.Button(
+            text="Browse",
+            on_press=self.action_open_file_dialog,
+            enabled=False,
+            style=Pack(width=button_width, margin=5)
+        )
+
+        self.rtf_box = toga.Box(
+            children=[self.rtf_label, self.rtf_input, self.rtf_button],
+            style=Pack(direction=ROW, margin_bottom=10)
+        )
+        self.main_tab_box.add(self.rtf_box)
+
+        # Generation mode selection
+        self.mode_label = toga.Label(text="Mode: ", style=Pack(width=label_width, margin=5))
+
+        # 先创建mode_info_label，以防mode_selection触发on_change事件
+        self.mode_info_label = toga.Label(
+            text=app.mode_info.get("Generate", "Generates mapping from scratch."),
+            style=Pack(margin=5, flex=1)
+        )
+
+        self.mode_selection = SourceSelection(
+            items=list(app.mode_info.keys()),
+            on_change=self.update_label,
+            style=Pack(direction=ROW, width=label_width, margin=5)
+        )
+        self.mode_selection.value = "Generate"  # Default mode 默认模式
+
+        self.allow_duplicates = toga.Switch(
+            text="Allow Duplicates?",
+            value=True,
+            style=Pack(margin=5)
+        )
+
+        # Create mode selection box with children
+        self.mode_box = toga.Box(
+            children=[self.mode_label, self.mode_selection, self.mode_info_label, self.allow_duplicates],
+            style=Pack(direction=ROW, margin_bottom=10)
+        )
+        self.main_tab_box.add(self.mode_box)
+
+        # BOTTOM Generation
+        self.generate_button = toga.Button(
+            text="Replace Faces",
+            on_press=self._replace_faces,
+            enabled=False,
+            style=Pack(margin=5)
+        )
+
+        self.status_label = toga.Label(
+            text="",
+            style=Pack(flex=0.2, margin=5)
+        )
+        self.progress_bar = toga.ProgressBar(
+            max=100,
+            style=Pack(flex=0.8, margin=5)
+        )
+
+        self.status_progress_box = toga.Box(
+            children=[self.progress_bar, self.status_label],
+            style=Pack(direction=ROW)
+        )
+
+        # Create generation box with children
+        self.gen_box = toga.Box(
+            children=[self.generate_button, self.status_progress_box],
+            style=Pack(direction=COLUMN, flex=1)
+        )
+        self.main_tab_box.add(self.gen_box)
+
+        # Store references for backward compatibility (moved to the end)
+        # 存储向后兼容的引用（移到最后）
+        self.app.prfsel_box = self.sel_box
+        self.app.prfsel_lst = self.selection_list
+        self.app.dir_inp = self.dir_input
+        self.app.dir_btn = self.dir_button
+        self.app.rtf_inp = self.rtf_input
+        self.app.rtf_btn = self.rtf_button
+        self.app.genmde_lab = self.mode_label
+        self.app.genmdeinfo_lab = self.mode_info_label
+        self.app.gendup = self.allow_duplicates
+        self.app.genmde_lst = self.mode_selection
+        self.app.gen_btn = self.generate_button
+        self.app.gen_lab = self.status_label
+        self.app.gen_prg = self.progress_bar
 
     def _create_profile(self, widget):
         """
@@ -213,64 +240,6 @@ class ProfileSection:
             self.app.dir_inp.value = self.app.profile_manager.prf_cfg['img_dir']
             self.app.rtf_inp.value = self.app.profile_manager.prf_cfg['rtf']
 
-
-class PathSelectionSection:
-    """
-    Path selection section UI components and functionality
-    资源路径选择部分UI组件和功能
-    """
-    def __init__(self, app, label_width, button_width):
-        """
-        Initialize path selection section UI
-        初始化资源路径选择部分UI
-
-        Args:
-            app: Application instance 应用实例
-            label_width: Label width 标签宽度
-            button_width: Button width 按钮宽度
-        """
-        self.app = app  # Application instance 应用实例
-
-        # Images Directory selection components
-        # 头像包目录选择组件
-        self.dir_label = toga.Label(text="Images Directory: ", style=Pack(width=label_width, margin=5))
-        self.dir_input = toga.TextInput(
-            readonly=True,
-            value=self.app.profile_manager.prf_cfg['img_dir'],
-            style=Pack(direction=ROW, margin=5, flex=1)
-        )
-        self.dir_button = toga.Button(
-            text="Browse",
-            on_press=self.action_select_folder_dialog,
-            enabled=False,
-            style=Pack(width=button_width, margin=5)
-        )
-
-        self.dir_box = toga.Box(
-            children=[self.dir_label, self.dir_input, self.dir_button],
-            style=Pack(direction=ROW, margin_bottom=10)
-        )
-
-        # RTF file selection components
-        # RTF文件选择组件
-        self.rtf_label = toga.Label(text="RTF File: ", style=Pack(width=label_width, margin=5))
-        self.rtf_input = toga.TextInput(
-            readonly=True,
-            value=self.app.profile_manager.prf_cfg['rtf'],
-            style=Pack(direction=ROW, margin=5, flex=1)
-        )
-        self.rtf_button = toga.Button(
-            text="Browse",
-            on_press=self.action_open_file_dialog,
-            enabled=False,
-            style=Pack(width=button_width, margin=5)
-        )
-
-        self.rtf_box = toga.Box(
-            children=[self.rtf_label, self.rtf_input, self.rtf_button],
-            style=Pack(direction=ROW, margin_bottom=10)
-        )
-
     async def action_select_folder_dialog(self, widget):
         """
         Action for select folder dialog (async method)
@@ -331,81 +300,6 @@ class PathSelectionSection:
         except Exception:
             self.app.logger.error("Fatal error in main loop", exc_info=True)
             pass
-
-
-class GenerationSection:
-    """
-    Generation section UI components and functionality
-    生成部分UI组件和功能
-    """
-    def __init__(self, app, label_width):
-        """
-        Initialize generation section UI
-        初始化生成部分UI
-
-        Args:
-            app: Application instance 应用实例
-            label_width: Label width 标签宽度
-        """
-        self.app = app  # Application instance 应用实例
-
-        # Mode selection components
-        # 模式选择框组件
-        self.mode_label = toga.Label(text="Mode: ", style=Pack(width=label_width, margin=5))
-
-        # 先创建mode_info_label，以防mode_selection触发on_change事件
-        self.mode_info_label = toga.Label(
-            text=app.mode_info.get("Generate", "Generates mapping from scratch."),
-            style=Pack(margin=5, flex=1)
-        )
-
-        self.mode_selection = SourceSelection(
-            items=list(app.mode_info.keys()),
-            on_change=self.update_label,
-            style=Pack(direction=ROW, width=label_width, margin=5)
-        )
-        self.mode_selection.value = "Generate"  # Default mode 默认模式
-
-        self.allow_duplicates = toga.Switch(
-            text="Allow Duplicates?",
-            value=True,
-            style=Pack(margin=5)
-        )
-
-        # Create mode selection box with children
-        self.mode_box = toga.Box(
-            children=[self.mode_label, self.mode_selection, self.mode_info_label, self.allow_duplicates],
-            style=Pack(direction=ROW, margin_bottom=10)
-        )
-
-        # Generation components
-        # 生成框组件
-        self.generate_button = toga.Button(
-            text="Replace Faces",
-            on_press=self._replace_faces,
-            enabled=False,
-            style=Pack(margin=5)
-        )
-
-        self.status_label = toga.Label(
-            text="",
-            style=Pack(flex=0.2, margin=5)
-        )
-        self.progress_bar = toga.ProgressBar(
-            max=100,
-            style=Pack(flex=0.8, margin=5)
-        )
-
-        self.status_progress_box = toga.Box(
-            children=[self.progress_bar, self.status_label],
-            style=Pack(direction=ROW)
-        )
-
-        # Create generation box with children
-        self.gen_box = toga.Box(
-            children=[self.generate_button, self.status_progress_box],
-            style=Pack(direction=COLUMN, flex=1)
-        )
 
     def update_label(self, widget):
         """
@@ -530,3 +424,15 @@ class GenerationSection:
         self.progress_bar.value = 0
         self.status_label.text = ''
         self.app.set_btns(True)
+
+
+# These classes are no longer needed as all UI components have been moved to MainTab
+# 这些类不再需要，因为所有UI组件都已移至MainTab
+# class ProfileSection:
+#     pass
+# 
+# class PathSelectionSection:
+#     pass
+# 
+# class GenerationSection:
+#     pass
