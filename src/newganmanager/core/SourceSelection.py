@@ -21,22 +21,8 @@ class SourceSelection(toga.Selection):
         super().__init__(id=id, style=style, items=items, on_change=on_change, enabled=enabled)
 
     def add_item(self, item):
-        """
-        Add a selection item
-        添加选择项
-
-        Args:
-            item: Item to be added 要添加的项
-        """
         self._items.append(item)
 
     def remove_item(self, item):
-        """
-        Remove a selection item
-        移除选择项
-
-        Args:
-            item: Item to be removed 要移除的项
-        """
         row = self._items.find(item)
         self._items.remove(row)

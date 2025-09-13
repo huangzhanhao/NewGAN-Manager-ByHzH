@@ -52,8 +52,7 @@ class LogTab:
         # Create FileHandler to update the log area in newgan.log
         # 创建文件处理器以更新newgan.log中的日志
         try:
-            # self.log_file_path = str(self.app.paths.app) + '/newgan.log'
-            fh = logging.FileHandler(self.log_file_path)
+            fh = logging.FileHandler(self.log_file_path, encoding='utf-8')
             fh.setFormatter(formatter)
             self.app.logger.addHandler(fh)
         except Exception as e:
