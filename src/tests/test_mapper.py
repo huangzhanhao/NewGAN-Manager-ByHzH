@@ -1,36 +1,53 @@
 import unittest
-from mapper import Mapper
-from rtfparser import RTF_Parser
-from profile_manager import Profile_Manager
-from config_manager import Config_Manager
+import sys
+import os
+
+# 添加项目根目录到Python路径
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'newganmanager'))
+
+# 从core导入模块
+from core.mapper import Mapper
+from core.rtfparser import RTF_Parser
+from core.profile_manager import Profile_Manager
+from core.config_manager import Config_Manager
 import shutil
 import itertools
-import os
 
 
 class Test_Mapper_Generate_Mapping(unittest.TestCase):
     def setUp(self):
-        shutil.copyfile("../newganmanager/.user/default_cfg.json", "testing_data/.user/cfg.json")
+        self.test_data_dir = os.path.join(os.path.dirname(__file__), "testing_data")
+        shutil.copyfile(os.path.join(os.path.dirname(__file__), "..", "newganmanager", ".user", "default_cfg.json"),
+                       os.path.join(self.test_data_dir, ".user", "cfg.json"))
         self.rtfparser = RTF_Parser()
-        self.pm = Profile_Manager("No Profile", "testing_data")
-        self.pm.prf_cfg["img_dir"] = "newganmanager/tests/"
-        self.mapper = Mapper("tests/", self.pm)
+        self.pm = Profile_Manager("No Profile", self.test_data_dir)
+        self.pm.prf_cfg["img_dir"] = self.test_data_dir + "/"
+        self.mapper = Mapper(self.test_data_dir + "/", self.pm)
         # data: UID, first_nat, sec_nat, eth-code
-        self.data_simple = self.rtfparser.parse_rtf("newganmanager/tests/test_simple.rtf")
-        self.data_all_cases = self.rtfparser.parse_rtf("newganmanager/tests/test_allcases.rtf")
-        self.data_buggy_ethnicity = self.rtfparser.parse_rtf("newganmanager/tests/ethnicity.rtf")
-        for eth in ["African", "Asian", "EECA", "Italmed", "SAMed", "South American", 
+        self.data_simple = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "test_simple.rtf"))
+        self.data_all_cases = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "test_allcases.rtf"))
+        self.data_buggy_ethnicity = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "ethnicity.rtf"))
+        for eth in ["African", "Asian", "EECA", "Italmed", "SAMed", "South American",
                     "SpanMed", "YugoGreek", "MENA", "MESA", "Caucasian", "Central European",
                     "Scandinavian", "Seasian"]:
             map = [eth+str(i)for i in range(20)]
             self.mapper.eth_map[eth] = set(map)
 
     def tearDown(self):
-        shutil.rmtree("testing_data/.config/")
-        shutil.copytree("../newganmanager/.config/", "testing_data/.config/")
-        shutil.rmtree("testing_data/.user/")
-        shutil.copytree("../newganmanager/.user/", "testing_data/.user/")
-        with open("testing_data/config.xml", "w") as cfg:
+        test_data_dir = os.path.join(os.path.dirname(__file__), "testing_data")
+        config_dir = os.path.join(test_data_dir, ".config")
+        user_dir = os.path.join(test_data_dir, ".user")
+
+        if os.path.exists(config_dir):
+            shutil.rmtree(config_dir)
+        shutil.copytree(os.path.join(os.path.dirname(__file__), "..", "newganmanager", ".config"), config_dir)
+
+        if os.path.exists(user_dir):
+            shutil.rmtree(user_dir)
+        shutil.copytree(os.path.join(os.path.dirname(__file__), "..", "newganmanager", ".user"), user_dir)
+
+        config_xml_path = os.path.join(test_data_dir, "config.xml")
+        with open(config_xml_path, "w") as cfg:
             cfg.write('OUTSIDE')
 
     def test_generate_mapping_simple(self):
@@ -91,7 +108,7 @@ class Test_Mapper_Generate_Mapping(unittest.TestCase):
         self.ethnics = ["VIR", "PRK", "UZB", "ITA", "URU", "PUR", "POR", "SVN", "MAR", "YEM", "USA", "LIE", "SWE", "THA"]
         product_inp = [["Name"], self.ethnics, self.ethnics, self.eth_val]
         map_list = list(itertools.product(*product_inp))
-        for eth in ["African", "Asian", "EECA", "Italmed", "SAMed", "South American", 
+        for eth in ["African", "Asian", "EECA", "Italmed", "SAMed", "South American",
                     "SpanMed", "YugoGreek", "MENA", "MESA", "Caucasian", "Central European",
                     "Scandinavian", "Seasian"]:
             map = [eth+str(i)for i in range(len(map_list))]
@@ -109,7 +126,7 @@ class Test_Mapper_Generate_Mapping(unittest.TestCase):
         self.ethnics = ["VIR", "PRK", "UZB", "ITA", "URU", "PUR", "POR", "SVN", "MAR", "YEM", "USA", "LIE", "SWE", "THA"]
         product_inp = [["Name"], self.ethnics, self.ethnics, self.eth_val]
         map_list = list(itertools.product(*product_inp))
-        for eth in ["African", "Asian", "EECA", "Italmed", "SAMed", "South American", 
+        for eth in ["African", "Asian", "EECA", "Italmed", "SAMed", "South American",
                     "SpanMed", "YugoGreek", "MENA", "MESA", "Caucasian", "Central European",
                     "Scandinavian", "Seasian"]:
             map = [eth+str(i)for i in range(3)]
@@ -124,7 +141,7 @@ class Test_Mapper_Generate_Mapping(unittest.TestCase):
         self.assertEqual(len(map_data), 3)
 
     def test_buggy_eth2(self):
-        parsedSquad = self.rtfparser.parse_rtf("newganmanager/tests/wrong_ethnicity.rtf")
+        parsedSquad = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "wrong_ethnicity.rtf"))
         # Map result index to expected ethnicity
         expectedOut = {0: "SAMed", 1: "South American", 2: "SAMed", 3: "South American"}
         map_data = self.mapper.generate_mapping(parsedSquad, "Generate")
@@ -135,29 +152,40 @@ class Test_Mapper_Generate_Mapping(unittest.TestCase):
 class Test_Mapper_Preserve_Mapping(unittest.TestCase):
     def setUp(self):
         # TODO: we need prf_map, prf_imgs and prf_eth_map
+        self.test_data_dir = os.path.join(os.path.dirname(__file__), "testing_data")
         self.rtfparser = RTF_Parser()
-        shutil.copyfile("../newganmanager/.user/default_cfg.json", "testing_data/.user/cfg.json")
-        self.pm = Profile_Manager("No Profile", "testing_data")
-        self.mapper = Mapper("tests/", self.pm)
-        self.pm.prf_cfg["img_dir"] = "newganmanager/tests/"
+        shutil.copyfile(os.path.join(os.path.dirname(__file__), "..", "newganmanager", ".user", "default_cfg.json"),
+                       os.path.join(self.test_data_dir, ".user", "cfg.json"))
+        self.pm = Profile_Manager("No Profile", self.test_data_dir)
+        self.mapper = Mapper(self.test_data_dir + "/", self.pm)
+        self.pm.prf_cfg["img_dir"] = self.test_data_dir + "/"
         # data: UID, first_nat, sec_nat, eth-code
-        self.data_simple = self.rtfparser.parse_rtf("newganmanager/tests/test_simple.rtf")
-        self.data_all_cases = self.rtfparser.parse_rtf("newganmanager/tests/test_allcases.rtf")
-        self.data_subset1 = self.rtfparser.parse_rtf("newganmanager/tests/allcases_subset1.rtf")
-        self.data_subset2 = self.rtfparser.parse_rtf("newganmanager/tests/allcases_subset2.rtf")
-        self.data_exclusive = self.rtfparser.parse_rtf("newganmanager/tests/test_exclusive.rtf")
-        for eth in ["African", "Asian", "EECA", "Italmed", "SAMed", "South American", 
+        self.data_simple = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "test_simple.rtf"))
+        self.data_all_cases = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "test_allcases.rtf"))
+        self.data_subset1 = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "allcases_subset1.rtf"))
+        self.data_subset2 = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "allcases_subset2.rtf"))
+        self.data_exclusive = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "test_exclusive.rtf"))
+        for eth in ["African", "Asian", "EECA", "Italmed", "SAMed", "South American",
                     "SpanMed", "YugoGreek", "MENA", "MESA", "Caucasian", "Central European",
                     "Scandinavian", "Seasian"]:
             map = set([eth+str(i)for i in range(20)])
             self.mapper.eth_map[eth] = map
 
     def tearDown(self):
-        shutil.rmtree("testing_data/.config/")
-        shutil.copytree("../newganmanager/.config/", "testing_data/.config/")
-        shutil.rmtree("testing_data/.user/")
-        shutil.copytree("../newganmanager/.user/", "testing_data/.user/")
-        with open("testing_data/config.xml", "w") as cfg:
+        test_data_dir = os.path.join(os.path.dirname(__file__), "testing_data")
+        config_dir = os.path.join(test_data_dir, ".config")
+        user_dir = os.path.join(test_data_dir, ".user")
+
+        if os.path.exists(config_dir):
+            shutil.rmtree(config_dir)
+        shutil.copytree(os.path.join(os.path.dirname(__file__), "..", "newganmanager", ".config"), config_dir)
+
+        if os.path.exists(user_dir):
+            shutil.rmtree(user_dir)
+        shutil.copytree(os.path.join(os.path.dirname(__file__), "..", "newganmanager", ".user"), user_dir)
+
+        config_xml_path = os.path.join(test_data_dir, "config.xml")
+        with open(config_xml_path, "w") as cfg:
             cfg.write('OUTSIDE')
 
     def test_preserve_mapping_simple(self):
@@ -266,17 +294,19 @@ class Test_Mapper_Preserve_Mapping(unittest.TestCase):
 class Test_Mapper_Overwrite_Mapping(unittest.TestCase):
     def setUp(self):
         # TODO: we need prf_map, prf_imgs and prf_eth_map
+        self.test_data_dir = os.path.join(os.path.dirname(__file__), "testing_data")
         self.rtfparser = RTF_Parser()
-        shutil.copyfile("../newganmanager/.user/default_cfg.json", "testing_data/.user/cfg.json")
-        self.pm = Profile_Manager("No Profile", "testing_data")
-        self.mapper = Mapper("tests/", self.pm)
-        self.pm.prf_cfg["img_dir"] = "newganmanager/tests/"
+        shutil.copyfile(os.path.join(os.path.dirname(__file__), "..", "newganmanager", ".user", "default_cfg.json"),
+                       os.path.join(self.test_data_dir, ".user", "cfg.json"))
+        self.pm = Profile_Manager("No Profile", self.test_data_dir)
+        self.mapper = Mapper(self.test_data_dir + "/", self.pm)
+        self.pm.prf_cfg["img_dir"] = self.test_data_dir + "/"
         # data: UID, first_nat, sec_nat, eth-code
-        self.data_simple = self.rtfparser.parse_rtf("newganmanager/tests/test_simple.rtf")
-        self.data_all_cases = self.rtfparser.parse_rtf("newganmanager/tests/test_allcases.rtf")
-        self.data_subset1 = self.rtfparser.parse_rtf("newganmanager/tests/allcases_subset1.rtf")
-        self.data_subset2 = self.rtfparser.parse_rtf("newganmanager/tests/allcases_subset2.rtf")
-        self.data_exclusive = self.rtfparser.parse_rtf("newganmanager/tests/test_exclusive.rtf")
+        self.data_simple = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "test_simple.rtf"))
+        self.data_all_cases = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "test_allcases.rtf"))
+        self.data_subset1 = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "allcases_subset1.rtf"))
+        self.data_subset2 = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "allcases_subset2.rtf"))
+        self.data_exclusive = self.rtfparser.parse_rtf(os.path.join(self.test_data_dir, "test_exclusive.rtf"))
 
         for eth in ["African", "Asian", "EECA", "Italmed", "SAMed", "South American",
                     "SpanMed", "YugoGreek", "MENA", "MESA", "Caucasian", "Central European",
@@ -285,11 +315,20 @@ class Test_Mapper_Overwrite_Mapping(unittest.TestCase):
             self.mapper.eth_map[eth] = set(map)
 
     def tearDown(self):
-        shutil.rmtree("testing_data/.config/")
-        shutil.copytree("../newganmanager/.config/", "testing_data/.config/")
-        shutil.rmtree("testing_data/.user/")
-        shutil.copytree("../newganmanager/.user/", "testing_data/.user/")
-        with open("testing_data/config.xml", "w") as cfg:
+        test_data_dir = os.path.join(os.path.dirname(__file__), "testing_data")
+        config_dir = os.path.join(test_data_dir, ".config")
+        user_dir = os.path.join(test_data_dir, ".user")
+
+        if os.path.exists(config_dir):
+            shutil.rmtree(config_dir)
+        shutil.copytree(os.path.join(os.path.dirname(__file__), "..", "newganmanager", ".config"), config_dir)
+
+        if os.path.exists(user_dir):
+            shutil.rmtree(user_dir)
+        shutil.copytree(os.path.join(os.path.dirname(__file__), "..", "newganmanager", ".user"), user_dir)
+
+        config_xml_path = os.path.join(test_data_dir, "config.xml")
+        with open(config_xml_path, "w") as cfg:
             cfg.write('OUTSIDE')
 
     def test_overwrite_mapping_simple(self):
