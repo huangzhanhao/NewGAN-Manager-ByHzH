@@ -1,7 +1,7 @@
 import json
 
 
-class Config_Manager:
+class ConfigManager:
     def __init__(self):
         pass
 

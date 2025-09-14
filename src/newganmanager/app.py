@@ -11,13 +11,13 @@ from travertino.constants import COLUMN, ROW
 import os
 import logging
 import shutil
-from .core.config_manager import Config_Manager
-from .core.profile_manager import Profile_Manager
+from .core.ConfigManager import ConfigManager
+from .core.ProfileManager import ProfileManager
 
-from .core.mapper import Mapper
-from .core.rtfparser import RTF_Parser
-from .core.reporter import Reporter
-from .core.xmlparser import XML_Parser
+from .core.Mapper import Mapper
+from .core.RtfParser import RtfParser
+from .core.Reporter import Reporter
+from .core.XmlParser import XmlParser
 from .app_log_tab import LogTab
 from .app_main_tab import MainTab
 import webbrowser
@@ -44,27 +44,27 @@ class NewGANManager(toga.App):
         # Initialize instance attributes
         # Initialize instance attributes with type annotations
         # 使用类型注解初始化实例属性
-        self.log_tab: LogTab | None = None
-        self.profile_manager: Profile_Manager | None = None
         self.facepack_dirs: set[str] = set()
         self.mode_info: dict[str, str] = {}
-        self.option_container: toga.OptionContainer | None = None
+        self.profile_manager: ProfileManager | None = None
         self.main_tab: MainTab | None = None
+        self.log_tab: LogTab | None = None
         self.profile_tab: toga.Box | None = None
+        self.option_container: toga.OptionContainer | None = None
         self.main_window: toga.MainWindow | None = None
-        self.prfsel_box: toga.Box | None = None
-        self.prfsel_lst: toga.Selection | None = None
-        self.dir_inp: toga.TextInput | None = None
-        self.dir_btn: toga.Button | None = None
-        self.rtf_inp: toga.TextInput | None = None
-        self.rtf_btn: toga.Button | None = None
-        self.genmde_lab: toga.Label | None = None
-        self.genmdeinfo_lab: toga.Label | None = None
-        self.gendup: toga.Switch | None = None
-        self.genmde_lst: toga.Selection | None = None
-        self.gen_btn: toga.Button | None = None
-        self.gen_lab: toga.Label | None = None
-        self.gen_prg: toga.ProgressBar | None = None
+        # self.prfsel_box: toga.Box | None = None
+        # self.prfsel_lst: toga.Selection | None = None
+        # self.dir_inp: toga.TextInput | None = None
+        # self.dir_btn: toga.Button | None = None
+        # self.rtf_inp: toga.TextInput | None = None
+        # self.rtf_btn: toga.Button | None = None
+        # self.genmde_lab: toga.Label | None = None
+        # self.genmdeinfo_lab: toga.Label | None = None
+        # self.gendup: toga.Switch | None = None
+        # self.genmde_lst: toga.Selection | None = None
+        # self.gen_btn: toga.Button | None = None
+        # self.gen_lab: toga.Label | None = None
+        # self.gen_prg: toga.ProgressBar | None = None
 
     def startup(self):
         """
@@ -138,7 +138,7 @@ class NewGANManager(toga.App):
 
         # Enable buttons and finalize startup
         # 启用按钮并完成启动
-        self.set_btns(True)
+        self.main_tab.set_btns(True)
 
     def _setup_application_data(self):
         """
@@ -160,12 +160,12 @@ class NewGANManager(toga.App):
             # Load current profile and migrate old config
             # 加载当前配置文件并迁移旧版配置
             self.logger.info("Loading current profile")
-            self.profile_manager = Profile_Manager(
-                Config_Manager().get_latest_prf(user_config_path), app_path
+            self.profile_manager = ProfileManager(
+                ConfigManager().get_latest_prf(user_config_path), app_path
             )
             self.profile_manager.migrate_config()
             # Store reference to config manager for backward compatibility
-            self.profile_manager.config_manager = Config_Manager()
+            self.profile_manager.config_manager = ConfigManager()
         except Exception as e:
             self.logger.error("Failed to setup application data: {}".format(e))
 
@@ -234,32 +234,6 @@ class NewGANManager(toga.App):
         """
         webbrowser.open(url)
 
-    def set_btns(self, value):
-        """
-        Set button enabled states
-        设置按钮启用状态
-
-        Args:
-            value: Button enabled state 按钮启用状态
-        """
-        if not all([self.gen_btn, self.dir_btn, self.rtf_btn]):
-            return
-        
-        if self.profile_manager and self.profile_manager.cur_prf == "No Profile":
-            if self.gen_btn: self.gen_btn.enabled = False
-            if self.dir_btn: self.dir_btn.enabled = False
-            if self.rtf_btn: self.rtf_btn.enabled = False
-        elif self.profile_manager and (
-            self.profile_manager.prf_cfg.get("img_dir", "") == ""
-            or self.profile_manager.prf_cfg.get("rtf", "") == ""
-        ):
-            if self.gen_btn: self.gen_btn.enabled = False
-            if self.dir_btn: self.dir_btn.enabled = value
-            if self.rtf_btn: self.rtf_btn.enabled = value
-        else:
-            if self.gen_btn: self.gen_btn.enabled = value
-            if self.dir_btn: self.dir_btn.enabled = value
-            if self.rtf_btn: self.rtf_btn.enabled = value
 
     async def _throw_error(self, msg):
         """
@@ -292,10 +266,8 @@ class NewGANManager(toga.App):
         if not self.main_window:
             return None
         try:
-            return await self.main_window.info_dialog(
-                "Info",
-                msg
-            )
+            dialog = toga.InfoDialog("Info", msg)
+            return await self.main_window.dialog(dialog)
         except Exception as e:
             self.logger.error(f"Error showing dialog: {e}")
             return None

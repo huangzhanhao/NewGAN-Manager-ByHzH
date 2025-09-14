@@ -1,7 +1,7 @@
 import re
 
 
-class XML_Parser:
+class XmlParser:
     def __init__(self):
         self.uid_regex = re.compile(r'graphics/pictures/person/(?:r-)?([0-9]{4,})/portrait')
         self.eth_img_regex = re.compile(r'((?<=from=\").*(?=\" to))')

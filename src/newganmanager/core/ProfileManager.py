@@ -1,11 +1,11 @@
-from .config_manager import Config_Manager
+from .ConfigManager import ConfigManager
 import os
 import logging
 from shutil import copyfileobj
 import shutil
 
 
-class Profile_Manager(Config_Manager):
+class ProfileManager(ConfigManager):
     def __init__(self, name, root_dir):
         """
         Initialize the Profile Manager  初始化配置文件管理器
@@ -28,7 +28,7 @@ class Profile_Manager(Config_Manager):
 
         self.logger = logging.getLogger("NewGAN App")
 
-        self.config_manager = Config_Manager()
+        self.config_manager = ConfigManager()
 
     def migrate_config(self):
         """

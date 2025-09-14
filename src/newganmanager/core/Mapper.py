@@ -1,7 +1,7 @@
 import logging
 import os
 import random
-from .xmlparser import XML_Parser
+from .XmlParser import XmlParser
 
 
 class Mapper:
@@ -23,7 +23,7 @@ class Mapper:
         xml_data = {}
 
         if mode in ["Preserve", "Overwrite"]:
-            xml_parser = XML_Parser()
+            xml_parser = XmlParser()
             xml_data = xml_parser.parse_xml(self.img_dir+"config.xml")
             prf_imgs = self.get_xml_images(xml_data)
 

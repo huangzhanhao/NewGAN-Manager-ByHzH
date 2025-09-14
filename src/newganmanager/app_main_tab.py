@@ -3,10 +3,10 @@ from toga.style import Pack
 from travertino.constants import COLUMN, ROW
 import os
 import asyncio
-from .core.mapper import Mapper
-from .core.rtfparser import RTF_Parser
-from .core.xmlparser import XML_Parser
-from .core.reporter import Reporter
+from .core.Mapper import Mapper
+from .core.RtfParser import RtfParser
+from .core.XmlParser import XmlParser
+from .core.Reporter import Reporter
 from .core.SourceSelection import SourceSelection
 
 
@@ -34,16 +34,16 @@ class MainTab:
 
         # TOP Profiles - Select Profile
         self.select_label = toga.Label(text="Select Profile: ", style=Pack(width=label_width, margin=5))
-        self.selection_list = SourceSelection(
+        self.profile_list = SourceSelection(
             items=list(self.app.profile_manager.config["Profile"].keys()),
             on_change=self._set_profile_status,
             style=Pack(direction=ROW, margin=5, flex=1)
         )
-        self.selection_list.value = self.app.profile_manager.cur_prf  # Current profile 当前配置文件
+        self.profile_list.value = self.app.profile_manager.cur_prf  # Current profile 当前配置文件
         self.delete_button = toga.Button(text="Delete", on_press=self._delete_profile, style=Pack(width=button_width, margin=5))
 
         self.sel_box = toga.Box(
-            children=[self.select_label, self.selection_list, self.delete_button],
+            children=[self.select_label, self.profile_list, self.delete_button],
             style=Pack(direction=ROW, margin_bottom=10)
         )
         self.main_tab_box.add(self.sel_box)
@@ -99,7 +99,7 @@ class MainTab:
 
         self.mode_selection = SourceSelection(
             items=list(app.mode_info.keys()),
-            on_change=self.update_label,
+            on_change=self.update_Modelabel,
             style=Pack(direction=ROW, width=label_width, margin=5)
         )
         self.mode_selection.value = "Generate"  # Default mode 默认模式
@@ -146,21 +146,32 @@ class MainTab:
         )
         self.main_tab_box.add(self.gen_box)
 
-        # Store references for backward compatibility (moved to the end)
-        # 存储向后兼容的引用（移到最后）
-        self.app.prfsel_box = self.sel_box
-        self.app.prfsel_lst = self.selection_list
-        self.app.dir_inp = self.dir_input
-        self.app.dir_btn = self.dir_button
-        self.app.rtf_inp = self.rtf_input
-        self.app.rtf_btn = self.rtf_button
-        self.app.genmde_lab = self.mode_label
-        self.app.genmdeinfo_lab = self.mode_info_label
-        self.app.gendup = self.allow_duplicates
-        self.app.genmde_lst = self.mode_selection
-        self.app.gen_btn = self.generate_button
-        self.app.gen_lab = self.status_label
-        self.app.gen_prg = self.progress_bar
+    def set_btns(self, value=True):
+        """
+        Set button enabled states
+        设置按钮启用状态
+
+        Args:
+            value: Button enabled state 按钮启用状态
+        """
+        if not all([self.generate_button, self.dir_button, self.rtf_button]):
+            return
+        
+        if self.app.profile_manager and self.app.profile_manager.cur_prf == "No Profile":
+            self.generate_button.enabled = False
+            self.dir_button.enabled = False
+            self.rtf_button.enabled = False
+        elif self.app.profile_manager and (
+            self.app.profile_manager.prf_cfg.get("img_dir", "") == ""
+            or self.app.profile_manager.prf_cfg.get("rtf", "") == ""
+        ):
+            self.generate_button.enabled = False
+            self.dir_button.enabled = value
+            self.rtf_button.enabled = value
+        else:
+            self.generate_button.enabled = value
+            self.dir_button.enabled = value
+            self.rtf_button.enabled = value
 
     def _create_profile(self, widget):
         """
@@ -175,11 +186,11 @@ class MainTab:
             self.app._throw_error("The Profile is Null!")
             return
         self.app.profile_manager.create_profile(name)
-        self.selection_list.add_item(name)
-        self.selection_list.value = name
+        self.profile_list.add_item(name)
+        self.profile_list.value = name
         self.create_input.value = None
         self._refresh_inp(True)
-        self.app.set_btns(True)
+        self.set_btns(True)
 
     def _delete_profile(self, widget):
         """
@@ -189,16 +200,16 @@ class MainTab:
         Args:
             widget: The widget that triggered the event 触发事件的组件
         """
-        prf = self.selection_list.value
+        prf = self.profile_list.value
         result = self.app.profile_manager.delete_profile(prf)
         if not result:
             # 处理删除失败的情况，显示错误信息
             self.app._throw_error("Can't delete 'No Profile'")
             return
-        self.selection_list.remove_item(prf)
-        self.selection_list.value = "No Profile"
+        self.profile_list.remove_item(prf)
+        self.profile_list.value = "No Profile"
         self._refresh_inp(True)
-        self.app.set_btns(False)
+        self.set_btns(False)
 
     def _set_profile_status(self, e):
         """
@@ -218,7 +229,7 @@ class MainTab:
             name = e.value
             self.app.profile_manager.load_profile(name)
             self._refresh_inp()
-            self.app.set_btns(True)
+            self.set_btns(True)
             self.app.profile_manager.config_manager.save_config(
                 str(self.app.paths.app)+"/.user/cfg.json", 
                 self.app.profile_manager.config
@@ -261,8 +272,8 @@ class MainTab:
                     str(self.app.paths.app) + "/.user/" + self.app.profile_manager.cur_prf + ".json", 
                     self.app.profile_manager.prf_cfg
                 )
-                self.app.set_btns(True)
-            self.app.set_btns(True)
+                self.set_btns(True)
+            self.set_btns(True)
         except Exception:
             self.app.logger.error("Fatal error in main loop", exc_info=True)
             pass
@@ -296,15 +307,15 @@ class MainTab:
                     str(self.app.paths.app) + "/.user/" + self.app.profile_manager.cur_prf + ".json", 
                     self.app.profile_manager.prf_cfg
                 )
-            self.app.set_btns(True)
+            self.set_btns(True)
         except Exception:
             self.app.logger.error("Fatal error in main loop", exc_info=True)
             pass
 
-    def update_label(self, widget):
+    def update_Modelabel(self, widget):
         """
-        Update label
-        更新标签
+        Update Mode label
+        更新模式标签
 
         Args:
             widget: The widget that triggered the event 触发事件的组件
@@ -372,12 +383,12 @@ class MainTab:
         self.app.logger.info("img_dir: {}".format(img_dir))
         self.app.logger.info("profile: {}".format(profile))
         self.app.logger.info("mode: {}".format(mode))
-        self.app.set_btns(False)
+        self.set_btns(False)
         self.progress_bar.start()
         self.status_label.text = "Parsing RTF"
         await asyncio.sleep(0.1)
-        rtf_parser = RTF_Parser()
-        if not rtf_parser.is_rtf_valid(rtf):
+        rtf_parser = RtfParser()
+        if not rtf_parser.check_rtf_valid(rtf):
             await self.app._throw_error("The RTF file is invalid!")
             self.progress_bar.stop()
             return
@@ -385,7 +396,7 @@ class MainTab:
         self.progress_bar.value += 20
         self.status_label.text = "Map player to ethnicity"
         await asyncio.sleep(0.1)
-        mapping_data = Mapper(img_dir, self.app.profile_manager).generate_mapping(rtf_data, mode, self.app.gendup.value)
+        mapping_data = Mapper(img_dir, self.app.profile_manager).generate_mapping(rtf_data, mode, self.allow_duplicates)
         self.progress_bar.value += 60
         self.status_label.text = "Generate config.xml"
         await asyncio.sleep(0.1)
@@ -423,16 +434,4 @@ class MainTab:
         self.progress_bar.stop()
         self.progress_bar.value = 0
         self.status_label.text = ''
-        self.app.set_btns(True)
-
-
-# These classes are no longer needed as all UI components have been moved to MainTab
-# 这些类不再需要，因为所有UI组件都已移至MainTab
-# class ProfileSection:
-#     pass
-# 
-# class PathSelectionSection:
-#     pass
-# 
-# class GenerationSection:
-#     pass
+        self.set_btns(True)
