@@ -16,7 +16,7 @@ class MainTab:
         # Create main box without margin to avoid layout issues
         # 创建主框但不添加边距以避免布局问题
         self.main_tab_box = toga.Box(style=Pack(direction=COLUMN, margin=10))
-        
+
         # Create UI sections with specified label width
         label_width = 110
         button_width = 70
@@ -28,7 +28,7 @@ class MainTab:
 
         self.create_box = toga.Box(
             children=[self.create_label, self.create_input, self.create_button],
-            style=Pack(direction=ROW, margin_bottom=10, align_items='center')
+            style=Pack(direction=ROW, align_items='center')
         )
         self.main_tab_box.add(self.create_box)
 
@@ -44,7 +44,7 @@ class MainTab:
 
         self.sel_box = toga.Box(
             children=[self.select_label, self.profile_list, self.delete_button],
-            style=Pack(direction=ROW, margin_bottom=10)
+            style=Pack(direction=ROW)
         )
         self.main_tab_box.add(self.sel_box)
 
@@ -64,7 +64,7 @@ class MainTab:
 
         self.dir_box = toga.Box(
             children=[self.dir_label, self.dir_input, self.dir_button],
-            style=Pack(direction=ROW, margin_bottom=10)
+            style=Pack(direction=ROW)
         )
         self.main_tab_box.add(self.dir_box)
 
@@ -84,25 +84,24 @@ class MainTab:
 
         self.rtf_box = toga.Box(
             children=[self.rtf_label, self.rtf_input, self.rtf_button],
-            style=Pack(direction=ROW, margin_bottom=10)
+            style=Pack(direction=ROW)
         )
         self.main_tab_box.add(self.rtf_box)
 
         # Generation mode selection
         self.mode_label = toga.Label(text="Mode: ", style=Pack(width=label_width, margin=5))
 
-        # 先创建mode_info_label，以防mode_selection触发on_change事件
         self.mode_info_label = toga.Label(
-            text=app.mode_info.get("Generate", "Generates mapping from scratch."),
+            text=app.mode_info.get("Preserve"),
             style=Pack(margin=5, flex=1)
         )
 
         self.mode_selection = SourceSelection(
             items=list(app.mode_info.keys()),
-            on_change=self.update_Modelabel,
+            value="Preserve",# Set default mode 设置默认模式
+            on_change=self.update_mode_info_by_selection,
             style=Pack(direction=ROW, width=label_width, margin=5)
         )
-        self.mode_selection.value = "Generate"  # Default mode 默认模式
 
         self.allow_duplicates = toga.Switch(
             text="Allow Duplicates?",
@@ -113,7 +112,7 @@ class MainTab:
         # Create mode selection box with children
         self.mode_box = toga.Box(
             children=[self.mode_label, self.mode_selection, self.mode_info_label, self.allow_duplicates],
-            style=Pack(direction=ROW, margin_bottom=10)
+            style=Pack(direction=ROW)
         )
         self.main_tab_box.add(self.mode_box)
 
@@ -156,7 +155,7 @@ class MainTab:
         """
         if not all([self.generate_button, self.dir_button, self.rtf_button]):
             return
-        
+
         if self.app.profile_manager and self.app.profile_manager.cur_prf == "No Profile":
             self.generate_button.enabled = False
             self.dir_button.enabled = False
@@ -183,7 +182,7 @@ class MainTab:
         """
         name = self.create_input.value
         if not name or not name.strip():
-            self.app._throw_error("The Profile is Null!")
+            self.app.throw_error("The Profile is Null!")
             return
         self.app.profile_manager.create_profile(name)
         self.profile_list.add_item(name)
@@ -204,7 +203,7 @@ class MainTab:
         result = self.app.profile_manager.delete_profile(prf)
         if not result:
             # 处理删除失败的情况，显示错误信息
-            self.app._throw_error("Can't delete 'No Profile'")
+            self.app.throw_error("Can't delete 'No Profile'")
             return
         self.profile_list.remove_item(prf)
         self.profile_list.value = "No Profile"
@@ -236,20 +235,17 @@ class MainTab:
             )
 
     def _refresh_inp(self, clear=False):
-        """
-        Refresh input buttons (internal method)
-        刷新输入按钮 (内部方法)
-
-        Args:
-            clear: Whether to clear inputs 是否清空输入
-        """
-        self.app.logger.info("Refresh Input Buttons")
         if clear:
-            self.app.dir_inp.value = None
-            self.app.rtf_inp.value = None
+            self.dir_input.value = None
+            self.rtf_input.value = None
         else:
-            self.app.dir_inp.value = self.app.profile_manager.prf_cfg['img_dir']
-            self.app.rtf_inp.value = self.app.profile_manager.prf_cfg['rtf']
+            self.dir_input.value = self.app.profile_manager.prf_cfg['img_dir']
+            self.rtf_input.value = self.app.profile_manager.prf_cfg['rtf']
+        self.app.logger.debug(
+            "Refresh InputText. Dir_input: %s, Rtf_input: %s",
+            self.dir_input.value,
+            self.dir_input.value,
+        )
 
     async def action_select_folder_dialog(self, widget):
         """
@@ -312,17 +308,9 @@ class MainTab:
             self.app.logger.error("Fatal error in main loop", exc_info=True)
             pass
 
-    def update_Modelabel(self, widget):
-        """
-        Update Mode label
-        更新模式标签
-
-        Args:
-            widget: The widget that triggered the event 触发事件的组件
-        """
-        self.app.logger.info("Updating generation label")
-        # 使用get方法避免KeyError，并提供默认值
+    def update_mode_info_by_selection(self, widget):
         self.mode_info_label.text = self.app.mode_info.get(widget.value, "Unknown mode")
+        self.app.logger.debug("Updating mode info label: {}".format(self.app.mode_info.get(widget.value, "Unknown mode")))
 
     async def _replace_faces(self, widget):
         """
@@ -338,12 +326,12 @@ class MainTab:
         profile = self.app.profile_manager.cur_prf
         mode = self.mode_selection.value
         if not os.path.isfile(rtf):
-            await self.app._throw_error("The RTF file doesn't exist!")
+            await self.app.throw_error("The RTF file doesn't exist!")
             self.progress_bar.stop()
             self.app.profile_manager.prf_cfg['rtf'] = ''
             return
         if not os.path.isdir(img_dir):
-            await self.app._throw_error("The image directory doesn't exist!")
+            await self.app.throw_error("The image directory doesn't exist!")
             self.progress_bar.stop()
             self.app.profile_manager.prf_cfg['img_dir'] = ''
             return
@@ -358,24 +346,23 @@ class MainTab:
             if fp_dir not in img_dirs:
                 # Ask user if they want to create the missing directory
                 # 询问用户是否要创建缺失的目录
-                dialog = toga.QuestionDialog(title="Missing Directory", message="Folder '{}' is missing in the image directory. Do you want to create it and continue?".format(fp_dir))
+                dialog = toga.QuestionDialog("Missing Directory", "Folder '{}' is missing in the image directory. Do you want to create it and continue?".format(fp_dir))
                 user_choose = await self.app.main_window.dialog(dialog)
-
-                # User chose to create the directory
-                # 用户选择创建目录
+                self.app.logger.debug("Question window: Missing Directory.   Folder '{}' is missing in the image directory. Do you want to create it and continue?".format(fp_dir))
+                self.app.logger.debug("User choose: {}".format(user_choose))
                 if user_choose:
                     try:
                         os.makedirs(os.path.join(img_dir, fp_dir), exist_ok=True)
                         self.app.logger.info("Created directory: {}".format(fp_dir))
                         continue
                     except Exception as e:
-                        await self.app._throw_error("Failed to create directory {}: {}".format(fp_dir, str(e)))
+                        await self.app.throw_error("Failed to create directory {}: {}".format(fp_dir, str(e)))
                         self.progress_bar.stop()
                         return
                 else:
                     # User chose not to create the directory, show error and stop
                     # 用户选择不创建目录，显示错误并停止
-                    await self.app._throw_error("Folder {} is missing in the image directory".format(fp_dir))
+                    await self.app.throw_error("Folder {} is missing in the image directory".format(fp_dir))
                     self.progress_bar.stop()
                     return
 
@@ -389,7 +376,7 @@ class MainTab:
         await asyncio.sleep(0.1)
         rtf_parser = RtfParser()
         if not rtf_parser.check_rtf_valid(rtf):
-            await self.app._throw_error("The RTF file is invalid!")
+            await self.app.throw_error("The RTF file is invalid!")
             self.progress_bar.stop()
             return
         rtf_data = rtf_parser.parse_rtf(rtf)
@@ -404,17 +391,17 @@ class MainTab:
             self.app.profile_manager.write_xml(mapping_data)
         except FileNotFoundError as e:
             self.app.logger.error(f"Configuration template file not found: {e}")
-            await self.app._throw_error(f"Configuration template file not found: {e}")
+            await self.app.throw_error(f"Configuration template file not found: {e}")
             self.progress_bar.stop()
             return
         except PermissionError as e:
             self.app.logger.error(f"Permission denied when accessing files: {e}")
-            await self.app._throw_error(f"Permission denied when accessing files: {e}")
+            await self.app.throw_error(f"Permission denied when accessing files: {e}")
             self.progress_bar.stop()
             return
         except Exception as e:
             self.app.logger.error(f"Unexpected error while writing XML: {e}")
-            await self.app._throw_error(f"Unexpected error while writing XML: {e}")
+            await self.app.throw_error(f"Unexpected error while writing XML: {e}")
             self.progress_bar.stop()
             return
         # save profile metadata (used pics and config.xml)
@@ -430,7 +417,7 @@ class MainTab:
         await asyncio.sleep(0.1)
         self.status_label.text = "Finished! :)"
         await asyncio.sleep(0.1)
-        await self.app._show_info("Finished! :)")
+        await self.app.show_info("Finished! :)")
         self.progress_bar.stop()
         self.progress_bar.value = 0
         self.status_label.text = ''

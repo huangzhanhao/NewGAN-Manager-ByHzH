@@ -47,7 +47,7 @@ class LogTab:
 
         # Set default log level to INFO
         # 设置默认日志级别为INFO
-        self.app.logger.setLevel(logging.INFO)
+        self.app.logger.setLevel(logging.DEBUG)
 
         # Create FileHandler to update the log area in newgan.log
         # 创建文件处理器以更新newgan.log中的日志
@@ -63,6 +63,7 @@ class LogTab:
         try:
             gui_handler = logging.StreamHandler(self)
             gui_handler.setFormatter(formatter)
+            gui_handler.setLevel(logging.INFO)
             self.app.logger.addHandler(gui_handler)
         except Exception as e:
             print(f"Warning: Could not create GUI handler: {e}")

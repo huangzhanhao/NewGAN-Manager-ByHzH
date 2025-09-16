@@ -13,8 +13,8 @@ class RtfParser:
         # 使用原始字符串避免转义警告
         # 正则表达式按照字段由前后"|"符号包围的逻辑设计
         self.UID_regex = re.compile(r"\|\s*[0-9]{4,}\s*\|")
-        self.english_nat_pattern = re.compile(r"^([A-Z]{3}|N/A|\s*)$")
-        self.chinese_nat_pattern = re.compile(r"\s*[\u4e00-\u9fff]+\s*")
+        self.english_nat_regex = re.compile(r"^([A-Z]{3}|N/A|\s*)$")
+        self.chinese_nat_regex = re.compile(r"\s*[\u4e00-\u9fff]+\s*")
         self.rtf_regex = re.compile(
             r"\|\s*[0-9]{4,}\s*\|"                  # UID字段(前后都有"|"符号)
             r"\s*[A-Z]{3}\s*\|"                     # 主要国籍字段(前后都有"|"符号)
@@ -49,7 +49,7 @@ class RtfParser:
                   [UID, 主要国籍, 第二国籍, 肤色代码, 是否为随机人, 面部, 俱乐部, 年龄, 身高, 体重]
         """
         # 先检查RTF文件有效性并确定语言
-        # self.check_rtf_valid(path)
+        self.check_rtf_valid(path)
 
         # 以UTF-8编码打开RTF文件并读取所有行
         with open(path, "r", encoding="UTF-8") as rtf:
@@ -78,21 +78,21 @@ class RtfParser:
                 continue
 
             # 提取并验证主要国籍
-            primary_nat = fields[1] if fields[1] != "N/A" else ""
-            if primary_nat == "" and not self.english_nat_pattern.match(primary_nat) and not self.chinese_nat_pattern.match(primary_nat):
+            primary_nat = fields[1] if isinstance(fields[1], str) else ""
+            if primary_nat == "" or (not self.english_nat_regex.match(primary_nat) and not self.chinese_nat_regex.match(primary_nat)):
                 msg = f"无效的主要国籍代码: {primary_nat}"
                 self.logger.warning(msg)
 
             # 提取并验证第二国籍
-            sec_nat = fields[2] if fields[2] != "N/A" else ""
-            if not self.english_nat_pattern.match(sec_nat) and not self.chinese_nat_pattern.match(sec_nat):
+            sec_nat = fields[2] if isinstance(fields[2], str) else ""
+            if not self.english_nat_regex.match(sec_nat) and not self.chinese_nat_regex.match(sec_nat):
                 msg = f"无效的第二国籍代码: {sec_nat}"
                 self.logger.warning(msg)
 
             # 提取并验证肤色代码
-            eth_code = fields[6] if fields[6] != "N/A" else ""
-            if not eth_code.isdigit() or int(eth_code) < 0 or int(eth_code) > 10:
-                msg = f"无效的肤色代码: {eth_code}"
+            skin_code = fields[6]
+            if int(skin_code) < 0 or int(skin_code) > 10:
+                msg = f"无效的肤色代码: {skin_code}"
                 self.logger.error(uid)
                 self.logger.error(msg)
                 continue
@@ -102,7 +102,7 @@ class RtfParser:
                 uid,
                 primary_nat,
                 sec_nat,
-                eth_code
+                skin_code
             ]
 
             # 处理附加字段
@@ -116,27 +116,27 @@ class RtfParser:
                 """
 
                 # 根据模板，提取额外字段
-                player_name = fields[3] if fields[3] != "N/A" else ""
-                hair_length = fields[4] if fields[4] != "N/A" else ""
-                hair_color = fields[5] if fields[5] != "N/A" else ""
-                is_random_person = fields[8] if len(fields) > 8 and fields[8] != "N/A" else ""
-                face = fields[9] if len(fields) > 9 and fields[9] != "N/A" else ""
-                club = fields[10] if len(fields) > 10 and fields[10] != "N/A" else ""
-                age = fields[11] if len(fields) > 11 and fields[11] != "N/A" else ""
-                height = fields[12] if len(fields) > 12 and fields[12] != "N/A" else ""
-                weight = fields[13] if len(fields) > 13 and fields[13] != "N/A" else ""
+                player_name = fields[3] if isinstance(fields[3], str) and not "" else ""
+                hair_length = fields[4] if fields[4] != "" else ""
+                hair_color = fields[5] if fields[5] != "" else ""
+                is_random_person = fields[8] if len(fields) > 8 and fields[8] != "" else ""
+                face = fields[9] if len(fields) > 9 and fields[9] != "" else ""
+                club = fields[10] if len(fields) > 10 and fields[10] != "" else ""
+                age = fields[11] if len(fields) > 11 and fields[11] != "" else ""
+                height = fields[12] if len(fields) > 12 and fields[12] != "" else ""
+                weight = fields[13] if len(fields) > 13 and fields[13] != "" else ""
 
                 # 添加所有字段到结果数据
                 detailed_data = [uid,
                 primary_nat,
                 sec_nat,
-                eth_code, player_name, hair_length, hair_color, is_random_person, face, club, age, height, weight]
+                skin_code, player_name, hair_length, hair_color, is_random_person, face, club, age, height, weight]
                 self.rtf_data.append(detailed_data)
                 self.logger.info("RTF数据: detailed_data", )
             else:
                 # 只添加基本数据
                 self.rtf_data.append(base_data)
-                self.logger.info("RTF数据: base_data")
+                # self.logger.info("RTF数据: {}".format(base_data))
 
         # 如果没有找到有效数据
         if not self.rtf_data:
@@ -189,13 +189,13 @@ class RtfParser:
         # 检查RTF数据是否匹配预期的格式模式
         if self.rtf_regex.search(rtf_data) :
             self.rtf_language = "English"
-            self.logger.info("The RTF file format is correct, and the RTF file data is： %s", self.rtf_language)
+            self.logger.info("The RTF file format is correct, and the RTF file data language is： %s", self.rtf_language)
             self.is_rtf_valid = True
             return self.is_rtf_valid
 
         elif self.rtf_regex_chn.search(rtf_data):
             self.rtf_language = "简体中文"
-            self.logger.info("RTF文件格式正确，RTF文件数据为： %s", self.rtf_language)
+            self.logger.info("RTF文件格式正确，RTF文件数据语言为： %s", self.rtf_language)
             self.is_rtf_valid = True
             return self.is_rtf_valid
 
@@ -225,7 +225,7 @@ class RtfParser:
                 self.logger.info("Loading translation file from: %s", translation_json_path)
                 translation_data = json.load(file)
                 if self.rtf_language == "简体中文":
-                    map_to_reverse = translation_data.get("简体中文", {}) or {}
+                    sim_map = translation_data.get("简体中文", {})
                     self.logger.info("Get translation data keys: %s", list(translation_data.keys()))
         except FileNotFoundError:
             self.logger.error("Translation mapping table file not found.")
@@ -233,15 +233,6 @@ class RtfParser:
         except json.JSONDecodeError:
             self.logger.error("Translation mapping table file parsing failed.")
             return rtf_data
-
-        # 构建反向映射
-        reverse_map = {}
-        for code, cname in map_to_reverse.items():
-            if isinstance(cname, str):
-                stripped_cname = cname.strip()
-                if stripped_cname in reverse_map:
-                    self.logger.info("Duplicate key found: %s, old value: %s, new value: %s", stripped_cname, reverse_map[stripped_cname], code)
-                reverse_map[stripped_cname] = code
 
         # 翻译数据：只翻译主要国籍(索引1)和第二国籍(索引2)，其他字段保持不变
         translated_data = []
@@ -255,26 +246,33 @@ class RtfParser:
             self.logger.info("Processing record: primary=%s, second=%s", primary, second)
 
             # 处理主要国籍
-            if primary is None:
-                primary_code = None
-            elif not isinstance(primary, str):
-                primary_code = primary
+            if not isinstance(primary, str):
+                tr_primary = primary
+            elif primary != "":
+                tr_primary = sim_map.get(primary.strip(), primary)
+                self.logger.info("Translating primary nat: '%s' to '%s'", primary, tr_primary)
             else:
-                primary_code = reverse_map.get(primary.strip(),primary)
-                self.logger.info("Translating '%s' to '%s'", primary.strip(), primary_code)
+                tr_primary = ""
 
             # 处理第二国籍
-            if second is None:
-                second_code = None
-            elif not isinstance(second, str):
-                second_code = second
+            if not isinstance(second, str):
+                tr_second = second
+            elif second != "":
+                tr_second = sim_map.get(second.strip(), second)
+                self.logger.info("Translating second nat: '%s' to '%s'", second, tr_second)
             else:
-                second_code = reverse_map.get(second.strip(), second)
-                self.logger.info("Translating '%s' to '%s'", second.strip(), second_code)
+                tr_second = ""
 
-            # 对于扩展数据格式，rest可能包含额外字段
-            translated_record = [uid, primary_code, second_code] + rest
+            # def translate_nat(nat, sim_map):
+            #     if not isinstance(nat, str) or nat == "":
+            #         return nat if nat != "" else ""
+            #     return sim_map.get(nat.strip(), nat)
+            #
+            # tr_primary = translate_nat(primary, sim_map)
+            # tr_second = translate_nat(second, sim_map)
+
+            translated_record = [uid, tr_primary, tr_second] + rest
             translated_data.append(translated_record)
 
-        self.logger.info("RTF数据已成功翻译为English。")
+        self.logger.info("RTF data has been successfully translated into English!")
         return translated_data
