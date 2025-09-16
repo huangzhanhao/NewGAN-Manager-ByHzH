@@ -41,6 +41,7 @@ class NewGANManager(toga.App):
             home_page="https://github.com/huangzhanhao/NewGAN-Manager-ByHzH",
         )
 
+        self.logger = logging.getLogger("NewGAN App")
         # Initialize instance attributes
         # Initialize instance attributes with type annotations
         # 使用类型注解初始化实例属性
@@ -81,7 +82,6 @@ class NewGANManager(toga.App):
         # Initialization Log Tab
         # 初始化日志标签页
         self.log_tab = LogTab(self)
-        self.logger = logging.getLogger("NewGAN App")
 
         # Setup application data and profile
         # 设置应用程序数据和配置文件
@@ -121,12 +121,12 @@ class NewGANManager(toga.App):
 
         # Create main tab
         self.main_tab = MainTab(self)
+        self.profile_tab = toga.Box()
 
         # Create option container and add tabs
         # 创建选项卡容器并添加标签页
-        self.option_container = toga.OptionContainer()
+        self.option_container = toga.OptionContainer(style=Pack(margin=(10,30), align_items="center"))
         self.option_container.content.append("Main", self.main_tab.main_tab_box)
-        self.profile_tab = toga.Box()
         self.option_container.content.append("Profile", self.profile_tab)
         self.option_container.content.append("Log", self.log_tab.log_tab_box)
 
@@ -181,7 +181,7 @@ class NewGANManager(toga.App):
             self.open_link("https://www.youtube.com/watch?v=iJqZNp0nomM")
             self.open_link("https://www.bilibili.com/video/BV1ew411h759")
             return True
-            
+
         usage = toga.Command(
             open_usage_links,
             text="User Guide",
@@ -203,7 +203,7 @@ class NewGANManager(toga.App):
         def open_faq(command, **kwargs):
             self.open_link("https://github.com/Maradonna90/NewGAN-Manager/wiki/FAQ")
             return True
-        
+
         faq = toga.Command(
             open_faq,
             text="FAQ",
@@ -234,43 +234,15 @@ class NewGANManager(toga.App):
         """
         webbrowser.open(url)
 
+    async def throw_error(self, msg):
+        self.logger.debug("Error window: {}".format(msg))
+        dialog = toga.ErrorDialog("Error",msg)
+        await  self.main_window.dialog(dialog)
 
-    async def _throw_error(self, msg):
-        """
-        Throw error message (async internal method)
-        抛出错误信息 (异步内部方法)
-
-        Args:
-            msg: Error message 错误信息
-        """
-        self.logger.info("Error window: {}".format(msg))
-        if not self.main_window:
-            return
-        try:
-            await self.main_window.error_dialog(
-                "Error",
-                msg
-            )
-        except Exception as e:
-            self.logger.error(f"Error showing dialog: {e}")
-
-    async def _show_info(self, msg):
-        """
-        Show information (async internal method)
-        显示信息 (异步内部方法)
-
-        Args:
-            msg: Message content 信息内容
-        """
-        self.logger.info("Info window: {}".format(msg))
-        if not self.main_window:
-            return None
-        try:
-            dialog = toga.InfoDialog("Info", msg)
-            return await self.main_window.dialog(dialog)
-        except Exception as e:
-            self.logger.error(f"Error showing dialog: {e}")
-            return None
+    async def show_info(self, msg):
+        self.logger.debug("Info window: {}".format(msg))
+        dialog = toga.InfoDialog("Info", msg)
+        await self.main_window.dialog(dialog)
 
     def on_exit(self):
         """
@@ -305,7 +277,7 @@ class NewGANManager(toga.App):
 
         try:
             if r.text.strip() != self.version:
-                await self._show_info("There is a new version. Please Update!")
+                await self.show_info("There is a new version. Please Update!")
                 self.open_link(
                     "https://github.com/Maradonna90/NewGAN-Manager/releases/latest"
                 )
