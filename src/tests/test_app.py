@@ -5,21 +5,13 @@ import unittest
 import sys
 import os
 import shutil
-from unittest.mock import patch, MagicMock
 
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'newganmanager'))
 
 # 从core导入模块
-from newganmanager.core.ConfigManager import ConfigManager
-from newganmanager.core.ProfileManager import ProfileManager
-from newganmanager.core.RtfParser import RtfParser
-from newganmanager.core.XmlParser import XmlParser
-from newganmanager.core.Mapper import Mapper
-from newganmanager.core.Reporter import Reporter
 
 # 导入应用程序主类
-from newganmanager.app import NewGANManager
 
 
 class TestIntegration(unittest.TestCase):

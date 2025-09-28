@@ -9,6 +9,21 @@ import subprocess
 import platform
 
 
+import queue
+
+class QueueHandler(logging.Handler):
+    """自定义Handler将日志记录放入队列"""
+    def __init__(self, queue):
+        super().__init__()
+        self.queue = queue
+        
+    def emit(self, record):
+        """将日志记录放入队列"""
+        try:
+            self.queue.put(record)
+        except Exception:
+            self.handleError(record)
+
 class LogTab:
     """
     Log tab UI components and functionality
@@ -24,11 +39,18 @@ class LogTab:
             app: Application instance 应用实例
         """
         self.app = app  # Application instance 应用实例
-
-        # Initialize buffer for performance optimization
-        # 初始化缓冲区用于性能优化
-        self.log_buffer = []
-        self.buffer_lock = threading.Lock()
+        
+        # Log storage and queue
+        # 日志存储和队列
+        self.log_store = []  # Store log records for filtering 存储日志记录用于筛选
+        self.max_log_store = 10000  # Max logs to keep in memory 内存中最大日志数量
+        self.log_queue = queue.Queue(maxsize=5000)  # Thread-safe log queue 线程安全日志队列
+        self.current_log_level = logging.INFO  # Default log level 默认日志级别
+        
+        # Start log processing thread
+        # 启动日志处理线程
+        self.log_thread = threading.Thread(target=self._process_logs, daemon=True)
+        self.log_thread.start()
 
         # Store log file path for easy access
         # 存储日志文件路径以便访问
@@ -40,7 +62,7 @@ class LogTab:
 
         # Enhanced logging setup with improved formatter
         # 使用改进的格式化器进行增强的日志设置
-        formatter = logging.Formatter(
+        self.formatter = logging.Formatter(
             "%(asctime)s | %(name)s | %(levelname)s | %(module)s:%(lineno)d - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
@@ -53,20 +75,10 @@ class LogTab:
         # 创建文件处理器以更新newgan.log中的日志
         try:
             fh = logging.FileHandler(self.log_file_path, encoding='utf-8')
-            fh.setFormatter(formatter)
+            fh.setFormatter(self.formatter)
             self.app.logger.addHandler(fh)
         except Exception as e:
             print(f"Warning: Could not create file handler: {e}")
-
-        # Create StreamHandler to update the log area in the GUI
-        # 创建流处理器以更新GUI中的日志
-        try:
-            gui_handler = logging.StreamHandler(self)
-            gui_handler.setFormatter(formatter)
-            gui_handler.setLevel(logging.INFO)
-            self.app.logger.addHandler(gui_handler)
-        except Exception as e:
-            print(f"Warning: Could not create GUI handler: {e}")
 
         # Log application startup information
         # 记录应用启动信息
@@ -87,8 +99,34 @@ class LogTab:
             text="Clear Logs", on_press=self._clear_logs, style=Pack(margin=5)
         )
 
+        # Add log level selector
+        # 添加日志级别选择器
+        self.log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        self.level_selector = toga.Selection(
+            items=self.log_levels,
+            on_change=self._on_log_level_changed,
+            style=Pack(margin=5, width=120)
+        )
+        self.level_selector.value = "INFO"
+        
+        # Add "New only" toggle
+        # 添加"仅显示新日志"开关
+        self.new_only_toggle = toga.Switch(
+            "仅显示新日志", 
+            on_change=self._toggle_new_only,
+            style=Pack(margin=5)
+        )
+        
+        # Update top row
+        # 更新顶部行
         self.top_row = toga.Box(
-            children=[self.log_label, self.open_logfile_button, self.clear_button],
+            children=[
+                self.log_label, 
+                self.level_selector,
+                self.new_only_toggle,
+                self.open_logfile_button, 
+                self.clear_button
+            ],
             style=Pack(direction=ROW, align_items="center"),
         )
 
@@ -105,9 +143,81 @@ class LogTab:
             style=Pack(direction=COLUMN, margin=5),
         )
 
-        # Start buffer flush timer for performance optimization
-        # 启动缓冲区刷新定时器用于性能优化
-        self._start_buffer_timer()
+        # 添加自定义QueueHandler
+        queue_handler = QueueHandler(self.log_queue)
+        queue_handler.setLevel(logging.DEBUG)
+        self.app.logger.addHandler(queue_handler)
+
+    def _process_logs(self):
+        """日志处理线程主函数"""
+        while True:
+            try:
+                # 从队列获取日志记录
+                record = self.log_queue.get(timeout=0.5)
+                
+                # 存储日志记录
+                self._store_log(record)
+                
+                # 写入文件
+                self._write_to_file(record)
+                
+                # 更新UI
+                self._update_ui([record])
+                
+            except queue.Empty:
+                pass
+                
+    def _store_log(self, record):
+        """存储日志记录"""
+        if len(self.log_store) >= self.max_log_store:
+            self.log_store.pop(0)
+        self.log_store.append(record)
+        
+    def _write_to_file(self, record):
+        """写入日志文件"""
+        try:
+            with open(self.log_file_path, "a", encoding="utf-8") as f:
+                f.write(self.formatter.format(record) + "\n")
+        except Exception as e:
+            print(f"Error writing to log file: {e}")
+            
+    def _update_ui(self, records):
+        """更新UI显示"""
+        if not hasattr(self, "log_area") or not self.log_area:
+            return
+            
+        # 应用当前筛选级别
+        filtered_records = [
+            record for record in records 
+            if record.levelno >= self.current_log_level
+        ]
+        
+        if not filtered_records:
+            return
+            
+        log_text = "\n".join(self.formatter.format(record) for record in filtered_records)
+        
+        # 安全更新UI
+        def update():
+            self.log_area.value += log_text + "\n"
+            self.log_area.scroll_to_bottom()
+            
+        if hasattr(self.app, "loop") and self.app.loop:
+            self.app.loop.call_soon_threadsafe(update)
+            
+    def _on_log_level_changed(self, widget):
+        """当日志级别改变时回调"""
+        selected = self.level_selector.value
+        if selected and isinstance(selected, str):
+            self.current_log_level = getattr(logging, selected)
+            
+            # 刷新所有日志显示
+            self._update_ui(self.log_store)
+        
+    def _toggle_new_only(self, widget):
+        """当'仅显示新日志'切换时回调"""
+        # 暂不实现，后续添加
+        pass
 
     def _open_log_file(self, widget):
         """
@@ -139,102 +249,6 @@ class LogTab:
             # Log the error but don't disrupt the application
             # 记录错误但不干扰应用程序
             self.app.logger.error(f"Failed to open log file: {e}")
-
-    def _start_buffer_timer(self):
-        """
-        Start the buffer flush timer for performance optimization
-        启动缓冲区刷新定时器用于性能优化
-        """
-
-        def timer_func():
-            while True:
-                time.sleep(0.5)  # Flush every 500ms
-                self._flush_buffer()
-
-        timer_thread = threading.Thread(target=timer_func, daemon=True)
-        timer_thread.start()
-
-    def _flush_buffer(self):
-        """
-        Flush the log buffer to the GUI
-        将日志缓冲区刷新到GUI
-        """
-        try:
-            with self.buffer_lock:
-                if self.log_buffer and hasattr(self, "log_area") and self.log_area:
-                    # Join all buffered messages
-                    # 合并所有缓冲的消息
-                    buffered_text = "".join(self.log_buffer)
-                    if buffered_text:
-                        self.log_area.value += buffered_text
-                        self.log_area.scroll_to_bottom()
-                    self.log_buffer.clear()
-        except Exception as e:
-            # Silently handle errors to avoid disrupting the application
-            # 静默处理错误以避免干扰应用程序
-            pass
-
-    def write(self, text):
-        """
-        Write log text with buffering and exception handling
-        带有缓冲和异常处理的写入日志文本
-
-        Args:
-            text: Text to write 要写入的文本
-        """
-        try:
-            # Add to buffer for performance optimization
-            # 添加到缓冲区以进行性能优化
-            with self.buffer_lock:
-                self.log_buffer.append(text)
-
-            # For critical messages, flush immediately
-            # 对于关键消息，立即刷新
-            if "ERROR" in text or "CRITICAL" in text:
-                self._flush_buffer()
-
-        except Exception as e:
-            # If buffering fails, try direct write as fallback
-            # 如果缓冲失败，尝试直接写入作为后备
-            try:
-                if hasattr(self, "log_area") and self.log_area:
-                    self.log_area.value += text
-                    self.log_area.scroll_to_bottom()
-            except Exception:
-                # If GUI log display fails, ensure file logging still works
-                # 如果GUI日志显示失败，确保文件日志仍然正常工作
-                pass
-
-    def flush(self):
-        """
-        Flush log stream with exception handling
-        带有异常处理的刷新日志流
-        """
-        try:
-            # Flush the buffer
-            # 刷新缓冲区
-            self._flush_buffer()
-
-            # Force GUI refresh if available
-            # 如果可用，强制刷新GUI
-            if hasattr(self, "log_area") and self.log_area:
-                try:
-                    if hasattr(self.app, "loop") and self.app.loop:
-                        self.app.loop.call_soon_threadsafe(
-                            lambda: (
-                                self.log_area.refresh()
-                                if hasattr(self.log_area, "refresh")
-                                else None
-                            )
-                        )
-                except Exception:
-                    # If thread-safe call fails, continue silently
-                    # 如果线程安全调用失败，静默继续
-                    pass
-        except Exception as e:
-            # Silently handle flush errors
-            # 静默处理刷新错误
-            pass
 
     def _clear_logs(self, widget):
         """
