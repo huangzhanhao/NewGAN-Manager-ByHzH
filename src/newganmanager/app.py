@@ -237,12 +237,14 @@ class NewGANManager(toga.App):
     async def throw_error(self, msg):
         self.logger.debug("Error window: {}".format(msg))
         dialog = toga.ErrorDialog("Error",msg)
-        await  self.main_window.dialog(dialog)
+        if self.main_window is not None:
+            await self.main_window.dialog(dialog)
 
     async def show_info(self, msg):
-        self.logger.debug("Info window: {}".format(msg))
+        self.logger.info("Info window: {}".format(msg))
         dialog = toga.InfoDialog("Info", msg)
-        await self.main_window.dialog(dialog)
+        if self.main_window is not None:
+            await self.main_window.dialog(dialog)
 
     def on_exit(self):
         """

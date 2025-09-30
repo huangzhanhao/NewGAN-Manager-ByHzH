@@ -3,7 +3,6 @@ import toga
 from toga.style import Pack
 from travertino.constants import COLUMN, ROW
 import threading
-import time
 import os
 import subprocess
 import platform
@@ -46,6 +45,7 @@ class LogTab:
         self.max_log_store = 10000  # Max logs to keep in memory 内存中最大日志数量
         self.log_queue = queue.Queue(maxsize=5000)  # Thread-safe log queue 线程安全日志队列
         self.current_log_level = logging.INFO  # Default log level 默认日志级别
+        self.show_only_current_level = False  # 单选框状态：是否只显示当前级别
         
         # Start log processing thread
         # 启动日志处理线程
@@ -71,14 +71,13 @@ class LogTab:
         # 设置默认日志级别为INFO
         self.app.logger.setLevel(logging.DEBUG)
 
-        # Create FileHandler to update the log area in newgan.log
-        # 创建文件处理器以更新newgan.log中的日志
+        # 创建文件处理器用于在日志处理线程中写入日志文件
         try:
-            fh = logging.FileHandler(self.log_file_path, encoding='utf-8')
-            fh.setFormatter(self.formatter)
-            self.app.logger.addHandler(fh)
+            self.file_handler = logging.FileHandler(self.log_file_path, encoding='utf-8')
+            self.file_handler.setFormatter(self.formatter)
         except Exception as e:
             print(f"Warning: Could not create file handler: {e}")
+            self.file_handler = None
 
         # Log application startup information
         # 记录应用启动信息
@@ -87,16 +86,24 @@ class LogTab:
         )
         self.app.logger.info(str(self.app.paths.app))
 
-        # Setup top row with label, open file button, and clear button
-        # 顶部行包含标签、打开文件按钮和清除按钮
+        # Setup top row with label, log level selector, open file button, and clear button
+        # 顶部行包含标签、日志级别选择器、打开文件按钮和清除按钮
         self.log_label = toga.Label("Application Log:", style=Pack(margin=5, flex=1))
 
         self.open_logfile_button = toga.Button(
             text="Open Log File", on_press=self._open_log_file, style=Pack(margin=5)
         )
 
-        self.clear_button = toga.Button(
+        self.clear_logarea_button = toga.Button(
             text="Clear Logs", on_press=self._clear_logs, style=Pack(margin=5)
+        )
+        
+        # 创建单选框组件
+        self.level_switch = toga.Switch(
+            text='only show logLevel:',
+            value=False,
+            on_change=self._on_show_level_changed,
+            style=Pack(margin=5)
         )
 
         # Add log level selector
@@ -104,28 +111,20 @@ class LogTab:
         self.log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         self.level_selector = toga.Selection(
             items=self.log_levels,
+            value="INFO",
             on_change=self._on_log_level_changed,
             style=Pack(margin=5, width=120)
-        )
-        self.level_selector.value = "INFO"
-        
-        # Add "New only" toggle
-        # 添加"仅显示新日志"开关
-        self.new_only_toggle = toga.Switch(
-            "仅显示新日志", 
-            on_change=self._toggle_new_only,
-            style=Pack(margin=5)
         )
         
         # Update top row
         # 更新顶部行
         self.top_row = toga.Box(
             children=[
-                self.log_label, 
+                self.log_label,
+                self.level_switch,
                 self.level_selector,
-                self.new_only_toggle,
-                self.open_logfile_button, 
-                self.clear_button
+                self.open_logfile_button,
+                self.clear_logarea_button
             ],
             style=Pack(direction=ROW, align_items="center"),
         )
@@ -158,43 +157,53 @@ class LogTab:
                 # 存储日志记录
                 self._store_log(record)
                 
-                # 写入文件
-                self._write_to_file(record)
-                
                 # 更新UI
                 self._update_ui([record])
                 
-            except queue.Empty:
-                pass
+                # 写入日志文件
+                if self.file_handler:
+                    try:
+                        self.file_handler.emit(record)
+                    except Exception as e:
+                        print(f"Error writing to log file: {e}")
                 
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"Error in log processing thread: {e}")
+                
+
     def _store_log(self, record):
         """存储日志记录"""
         if len(self.log_store) >= self.max_log_store:
             self.log_store.pop(0)
         self.log_store.append(record)
         
-    def _write_to_file(self, record):
-        """写入日志文件"""
-        try:
-            with open(self.log_file_path, "a", encoding="utf-8") as f:
-                f.write(self.formatter.format(record) + "\n")
-        except Exception as e:
-            print(f"Error writing to log file: {e}")
-            
     def _update_ui(self, records):
         """更新UI显示"""
         if not hasattr(self, "log_area") or not self.log_area:
             return
             
-        # 应用当前筛选级别
-        filtered_records = [
-            record for record in records 
-            if record.levelno >= self.current_log_level
-        ]
+        # 根据单选框状态应用筛选级别
+        if self.show_only_current_level:
+            # 只显示当前级别的日志
+            filtered_records = [
+                record for record in records
+                if record.levelno == self.current_log_level
+            ]
+        else:
+            # 显示当前级别及以上的日志
+            filtered_records = [
+                record for record in records
+                if record.levelno >= self.current_log_level
+            ]
         
         if not filtered_records:
             return
             
+            # 记录日志筛选模式变化
+            level_mode = "EXACT" if self.show_only_current_level else "LEVEL_AND_ABOVE"
+            self.app.logger.info(f"Log filter changed: level={selected}, mode={level_mode}")
         log_text = "\n".join(self.formatter.format(record) for record in filtered_records)
         
         # 安全更新UI
@@ -210,15 +219,17 @@ class LogTab:
         selected = self.level_selector.value
         if selected and isinstance(selected, str):
             self.current_log_level = getattr(logging, selected)
-            
+            self.log_area.value = ""  # Clear current display
             # 刷新所有日志显示
             self._update_ui(self.log_store)
         
-    def _toggle_new_only(self, widget):
-        """当'仅显示新日志'切换时回调"""
-        # 暂不实现，后续添加
-        pass
-
+    def _on_show_level_changed(self, widget):
+        """当单选框状态改变时回调"""
+        self.show_only_current_level = widget.value
+        # 刷新所有日志显示
+        self.log_area.value = ""
+        self._update_ui(self.log_store)
+        
     def _open_log_file(self, widget):
         """
         Open the log file
