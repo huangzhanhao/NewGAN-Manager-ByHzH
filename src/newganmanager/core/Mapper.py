@@ -40,10 +40,7 @@ class Mapper:
             if n1_ethnic is None:
                 self.logger.info("Mapping for {} is missing. Skipping player {}".format(player[1], player[0]))
                 continue
-            self.logger.info("{}/{}: {}, {}, {}".format(i, len(rtf_data), player, n1_ethnic, n2_ethnic))
-            if int(player[3]) > 10:
-                self.logger.info("Ethnic value {} is invalid. Most likely a bug in the view. Skipping player {}".format(player[3], player[0]))
-                continue
+            self.logger.info("{}/{}: {}, {}, {}".format(i+1, len(rtf_data), player, n1_ethnic, n2_ethnic))
             # if player is in config.xml and we use preserver or overwrite handle it properly
             if player[0] in xml_data:
                 if mode == "Preserve":
@@ -52,7 +49,7 @@ class Mapper:
                 elif mode == "Overwrite":
                     prf_imgs.remove(xml_data[player[0]]["image"])
                     del xml_data[player[0]]
-            if player[3] == "1":
+            if player[6] == "1":
                 if "Scandinavian" in [n1_ethnic, n2_ethnic]:
                     p_ethnic = "South American"
                 if "Seasian" in [n1_ethnic, n2_ethnic]:
@@ -81,41 +78,52 @@ class Mapper:
                     p_ethnic = "YugoGreek"
                 if "South American" in [n1_ethnic, n2_ethnic]:
                     p_ethnic = "South American"
-            elif player[3] in ["3", "6", "7", "8", "9"]:
+            elif player[6] in ["3", "6", "7", "8", "9"]:
                 # SAMed with 7 is light-skinned
-                if "SAMed" == n1_ethnic and player[3] == "7":
+                if "SAMed" == n1_ethnic and player[6] == "7":
                     p_ethnic = "SAMed"
                 # South American with 7 is light-skinned
-                elif "South American" == n1_ethnic and player[3] == "7":
+                elif "South American" == n1_ethnic and player[6] == "7":
                     p_ethnic = "South American"
                 else:
                     p_ethnic = "African"
-            elif player[3] == "10":
+            elif player[6] == "10":
                 if "South American" == n1_ethnic:
                     p_ethnic = "South American"
                 else:
                     p_ethnic = "Asian"
-            elif player[3] == "2":
+            elif player[6] == "2":
                 p_ethnic = "MENA"
                 if "MESA" in [n1_ethnic, n2_ethnic]:
                     p_ethnic = "MESA"
-            elif player[3] == "5":
+            elif player[6] == "5":
                 p_ethnic = "Seasian"
-            elif player[3] == "0":
+            elif player[6] == "0":
                 p_ethnic = "Central European"
                 if "Scandinavian" in [n1_ethnic, n2_ethnic]:
                     p_ethnic = "Scandinavian"
                 elif "Caucasian" in [n1_ethnic, n2_ethnic]:
                     p_ethnic = "Caucasian"
-            elif player[3] == "4":
+            elif player[6] == "4":
                 p_ethnic = "MESA"
 
-            # pick image based on p_ethnic
-            player_img = self.pick_image(p_ethnic, duplicates)
-            prf_imgs.append(player_img)
-            if player_img is None:
-                self.logger.info("Ethnicity {} has no faces left for mapping. Skipping player {}".format(p_ethnic, player[0]))
+            # 确保p_ethnic不为None
+            if p_ethnic is None:
+                self.logger.error(f"无法确定球员 {player[0]} 的人种分类，跳过该球员")
                 continue
+                
+            # 检查人种分类是否有效
+            if p_ethnic not in self.eth_map:
+                self.logger.error(f"人种分类 '{p_ethnic}' 无效或未配置图片目录，跳过球员 {player[0]}")
+                continue
+                
+            # 基于人种分类选择图片
+            player_img = self.pick_image(p_ethnic, duplicates)
+            if player_img is None:
+                self.logger.info("人种分类 {} 没有可用面部图片，跳过球员 {}".format(p_ethnic, player[0]))
+                continue
+                
+            prf_imgs.append(player_img)
             mapping.append([player[0], p_ethnic, player_img])
         if mode in ["Overwrite", "Preserve"]:
             self.post_rtf_hook(mapping, prf_imgs, xml_data)

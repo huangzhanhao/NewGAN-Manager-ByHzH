@@ -12,9 +12,6 @@ class RtfParser:
         self.is_rtf_valid = False
         # 使用原始字符串避免转义警告
         # 正则表达式按照字段由前后"|"符号包围的逻辑设计
-        self.UID_regex = re.compile(r"\|\s*[0-9]{4,}\s*\|")
-        self.english_nat_regex = re.compile(r"^([A-Z]{3}|N/A|\s*)$")
-        self.chinese_nat_regex = re.compile(r"\s*[\u4e00-\u9fff]+\s*")
         self.rtf_regex = re.compile(
             r"\|\s*[0-9]{4,}\s*\|"                  # UID字段(前后都有"|"符号)
             r"\s*[A-Z]{3}\s*\|"                     # 主要国籍字段(前后都有"|"符号)
@@ -39,124 +36,120 @@ class RtfParser:
     def parse_rtf(self, path):
         """
         解析RTF文件，提取球员数据
+        字段顺序：UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码
 
         Args:
             path (str): RTF文件的路径
 
         Returns:
             list: 包含球员信息的列表，每个球员信息是一个包含以下元素的列表：
-                  [UID, 主要国籍, 第二国籍, 肤色代码] 或
-                  [UID, 主要国籍, 第二国籍, 肤色代码, 是否为随机人, 面部, 俱乐部, 年龄, 身高, 体重]
+                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码] 或
+                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码, 是否为随机人, 面部, 俱乐部, 年龄, 身高, 体重]
         """
-        # 先检查RTF文件有效性并确定语言
-        self.check_rtf_valid(path)
-
-        # 以UTF-8编码打开RTF文件并读取所有行
+        # 验证RTF文件格式
+        if not self.check_rtf_valid(path):
+            self.logger.error("无效的RTF文件格式")
+            return []
+        
+        # 重置数据
+        self.rtf_data = []
+        
         try:
-            debug_data = []
+            line_count = 0
             with open(path, "r", encoding="UTF-8") as rtf:
+                self.logger.info(f"正在处理RTF文件: ")
                 for line in rtf:
-                    if self.rtf_regex.search(line) or self.rtf_regex_chn.search(line):
-                        valid_line = line.strip()
-                        fields = [f.strip() for f in valid_line.split("|") if f]
-                        debug_data.append(valid_line.strip())
-                        self.logger.debug(f"\n处理数据行: {line} to {fields}, filed count:{len( fields)}")
+                    line_count += 1
+                    
+                    # 跳过空行
+                    if not line.strip():
                         continue
-                        if len(fields) < 7:
-                            self.logger.error(f"数据行缺少必要字段, 字段数量: {len(fields)}, 字段内容: {fields}")
-                            continue
-                            base_data = [uid, primary_nat, sec_nat, skin_code]
-            self.logger.debug(f"有效数据行计数: {len(debug_data)}")
+                    
+                    # 使用正则匹配有效数据行
+                    if self.rtf_regex.search(line) or self.rtf_regex_chn.search(line):
+                        try:
+                            # 分割字段并去除空白，但保留空值字段
+                            fields = [f.strip() for f in line.split("|")]
+                            # 移除第一个和最后一个空字段（来自行首行尾的分隔符）
+                            fields = fields[1:-1] if len(fields) >= 2 else []
+                            
+                            # 验证字段数量
+                            if len(fields) < 7:
+                                self.logger.warning(f"行 {line_count}: 字段不足 ({len(fields)}/7) - 跳过")
+                                continue
+                            
+                            # 提取核心字段（按新顺序）
+                            uid = fields[0]
+                            primary_nat = fields[1]
+                            sec_nat = fields[2] if len(fields) > 2 else ""
+                            player_name = fields[3] if len(fields) > 3 else ""
+                            hair_length = fields[4] if len(fields) > 4 else ""
+                            hair_color = fields[5] if len(fields) > 5 else ""
+                            skin_code = fields[6] if len(fields) > 6 else ""
+                            
+                            # 验证UID
+                            if not uid.isdigit():
+                                self.logger.info(f"行 {line_count}: 无效的UID - 跳过")
+                                continue
+                            
+                            # 验证肤色代码
+                            skin_code_valid = True
+                            try:
+                                skin_code_int = int(skin_code)
+                                if skin_code_int < 0 or skin_code_int > 10:
+                                    self.logger.info(f"行 {line_count}: 肤色代码超出范围(0-10) - 跳过")
+                                    skin_code_valid = False
+                            except ValueError:
+                                self.logger.info(f"行 {line_count}: 肤色代码必须为整数 - 跳过")
+                                skin_code_valid = False
+                            
+                            if not skin_code_valid:
+                                continue
+                            
+                            # 创建基础数据记录（按新顺序）
+                            base_data = [
+                                uid,
+                                primary_nat,
+                                sec_nat,
+                                player_name,
+                                hair_length,
+                                hair_color,
+                                skin_code
+                            ]
+                            
+                            # 处理附加字段（如果有）
+                            if len(fields) > 7:
+                                # 处理可能的零宽空格字符
+                                if len(fields) >12 and ("\u200b" in fields[12] or "\u200b" in fields[13]):
+                                    fields[12] = fields[12].replace("\u200b", "")
+                                    fields[13] = fields[13].replace("\u200b", "")
+                                # 提取附加字段
+                                additional_fields = fields[7:]
+                                # 创建详细数据记录
+                                detailed_data = base_data + additional_fields
+                                self.rtf_data.append(detailed_data)
+                                self.logger.debug(f"添加详细数据: {detailed_data}")
+                            else:
+                                # 添加基础数据
+                                self.rtf_data.append(base_data)
+                                self.logger.debug(f"添加基础数据: {base_data}")
+                                
+                        except ValueError as ve:
+                            self.logger.error(f"行 {line_count}: {str(ve)} - 跳过")
+                        except Exception as e:
+                            self.logger.error(f"行 {line_count}: 处理错误 - {str(e)}")
+            
+            self.logger.info(f"成功处理 {len(self.rtf_data)} 条有效记录")
+            
         except FileNotFoundError:
-            self.logger.error(f"RTF file not found: {path}")
+            self.logger.error(f"RTF文件未找到: {path}")
+            return []
         except UnicodeDecodeError:
-            self.logger.error(f"RTF file encoding error: {path}, please check the file encoding format.")
+            self.logger.error(f"RTF文件编码错误: {path}, 请检查文件编码格式")
+            return []
         except Exception as e:
-            self.logger.error(f"Error occurred while processing RTF file: {path}, error message: {str(e)}")
-
-        # 筛选包含至少4位数字UID的有效数据行
-        # valid_lines = [line.strip() for line in rtf_lines if self.UID_regex.search(line)]
-
-        # 处理每一行有效数据
-        # for line in valid_lines:
-        #     # 使用管道符分割字段，并移除首尾空白字符
-        #     fields = [f.strip() for f in line.split("|") if f]
-        #     self.logger.debug(f"处理数据行: {line} to {fields}")
-        #
-        #     # 以下进行更详细的数据格式验证
-        #     # 验证字段数量 - 我们需要至少7个字段
-        #     if len(fields) < 7:
-        #         msg = f"数据行缺少必要字段, 字段数量: {len(fields)}, 字段内容: {fields}"
-        #         self.logger.error(msg)
-        #         continue
-        #
-        #     # 提取UID
-        #     uid = fields[0]
-        #     if not uid.isdigit():
-        #         msg = f"无效的UID: {uid}"
-        #         self.logger.error(msg)
-        #         continue
-        #
-        #     # 提取并验证主要国籍
-        #     primary_nat = fields[1] if isinstance(fields[1], str) else ""
-        #     if primary_nat == "" or (not self.english_nat_regex.match(primary_nat) and not self.chinese_nat_regex.match(primary_nat)):
-        #         msg = f"无效的主要国籍代码: {primary_nat}"
-        #         self.logger.warning(msg)
-        #
-        #     # 提取并验证第二国籍
-        #     sec_nat = fields[2] if isinstance(fields[2], str) else ""
-        #     if not self.english_nat_regex.match(sec_nat) and not self.chinese_nat_regex.match(sec_nat):
-        #         msg = f"无效的第二国籍代码: {sec_nat}"
-        #         self.logger.warning(msg)
-        #
-        #     # 提取并验证肤色代码
-        #     skin_code = fields[6]
-        #     if int(skin_code) < 0 or int(skin_code) > 10:
-        #         msg = f"无效的肤色代码: {skin_code}"
-        #         self.logger.error(uid)
-        #         self.logger.error(msg)
-        #         continue
-        #
-        #     # 添加验证通过的数据
-        #     base_data = [
-        #         uid,
-        #         primary_nat,
-        #         sec_nat,
-        #         skin_code
-        #     ]
-        #
-        #     # 处理附加字段
-        #     if len(fields) > 7:
-        #         # 对于新的游戏view模板，加入处理附加字段以应用新功能
-        #         """
-        #         新的view模板如下：
-        #         | 编号        | 国籍/地区籍 | 第二国籍/地区籍 | 姓名              |      |      |      |      | 是否为随机人 | 面部  | 俱乐部       | 年龄  | 身高    | 体重  |
-        #         | ----------------------------------------------------------------------------------------------------------------------------------------------|
-        #         | 2000167433 | USA       | ARG          | Maximo Carrizo   | 1    | 12   | 0    | 5    | 否         |      |             | 20   | 165厘米 | 66公斤|
-        #         """
-        #
-        #         # 根据模板，提取额外字段
-        #         player_name = fields[3] if isinstance(fields[3], str) and not "" else ""
-        #         hair_length = fields[4] if fields[4] != "" else ""
-        #         hair_color = fields[5] if fields[5] != "" else ""
-        #         is_random_person = fields[8] if len(fields) > 8 and fields[8] != "" else ""
-        #         face = fields[9] if len(fields) > 9 and fields[9] != "" else ""
-        #         club = fields[10] if len(fields) > 10 and fields[10] != "" else ""
-        #         age = fields[11] if len(fields) > 11 and fields[11] != "" else ""
-        #         height = fields[12] if len(fields) > 12 and fields[12] != "" else ""
-        #         weight = fields[13] if len(fields) > 13 and fields[13] != "" else ""
-        #
-        #         # 添加所有字段到结果数据
-        #         detailed_data = [uid,
-        #         primary_nat,
-        #         sec_nat,
-        #         skin_code, player_name, hair_length, hair_color, is_random_person, face, club, age, height, weight]
-        #         self.rtf_data.append(detailed_data)
-        #         self.logger.info("RTF数据: detailed_data", )
-        #     else:
-        #         # 只添加基本数据
-        #         self.rtf_data.append(base_data)
-        #         # self.logger.info("RTF数据: {}".format(base_data))
+            self.logger.error(f"处理RTF文件时发生错误: {path}, 错误信息: {str(e)}")
+            return []
 
         # 如果没有找到有效数据
         if not self.rtf_data:
@@ -228,6 +221,7 @@ class RtfParser:
     def translate_rtf_data_to_english(self, rtf_data):
         """
         将传入的rtf_data数据翻译为英文
+        注意：字段顺序已更新为 [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码, ...]
 
         Args:
             rtf_data (list): 需要翻译的RTF数据列表
@@ -236,48 +230,54 @@ class RtfParser:
             list: 翻译后的rtf_data
         """
         if self.rtf_language == "English":
-            self.logger.info("The current RTF data language is English and no translation is needed.")
+            self.logger.info("当前RTF数据语言为英文，无需翻译")
             return rtf_data
 
         translation_json_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".config", "translation.json")
-        tr_map =  {}
+        tr_map = {}
         try:
             with open(translation_json_path, "r", encoding="utf-8") as file:
-                self.logger.info("Loading translation file from: %s", translation_json_path)
+                self.logger.info("从路径加载翻译文件: %s", translation_json_path)
                 translation_data = json.load(file)
                 tr_map = translation_data.get(self.rtf_language, {})
-                self.logger.info("Get translation data keys: %s", list(translation_data.keys()))
         except FileNotFoundError:
-            self.logger.error("Translation mapping table file not found.")
+            self.logger.error("翻译映射表文件未找到")
             return rtf_data
         except json.JSONDecodeError:
-            self.logger.error("Translation mapping table file parsing failed.")
+            self.logger.error("翻译映射表文件解析失败")
             return rtf_data
 
-        # 翻译数据：只翻译主要国籍(索引1)和第二国籍(索引2)，其他字段保持不变
+        # 检查翻译映射表是否为空
+        if not tr_map:
+            self.logger.error("翻译映射表为空!")
+            return rtf_data
+
         translated_data = []
-        if tr_map == {}:
-            self.logger.error("The translation map is blank!")
-            return translated_data
-
         for record in rtf_data:
-            # 期望 record 格式为 [UID, primary_nat, second_nat, ...]
-            uid = record[0] if len(record) > 0 else record
-            primary = record[1] if len(record) > 1 and isinstance(record[1], str) else ""
-            second = record[2] if len(record) > 2 and isinstance(record[2], str) else ""
-            # 其他字段（姓名、头发长度、头发颜色、肤色代码等）保持不变
-            rest = record[3:] if len(record) > 3 else []
-            tr_primary = ""
-            tr_second = ""
-            self.logger.info("Processing record: uid=%s, primary=%s, second=%s", uid, primary, second)
-            if primary == "":
-                self.logger.error("Failed to translating, because primary nationality is blank for UID: %s , primary_nat: '%s'", uid, primary)
-                continue
-            tr_primary = tr_map.get(primary.strip(), primary)
-            tr_second = tr_map.get(second.strip(), second) if second else ""
-            self.logger.info("Translating uid%s primary_nat: '%s' to '%s', second_nat: '%s' to '%s'",uid, primary, tr_primary, second, tr_second)
-            translated_record = [uid, tr_primary, tr_second] + rest
-            translated_data.append(translated_record)
+            try:
+                # 新字段顺序: [0]UID, [1]主要国籍, [2]第二国籍, [3]姓名, [4]头发长度, [5]头发颜色, [6]肤色代码...
+                uid = record[0]
+                primary = record[1]
+                second = record[2]
+                
+                # 翻译主要国籍和第二国籍
+                tr_primary = tr_map.get(primary.strip(), primary)
+                tr_second = tr_map.get(second.strip(), second) if second else ""
+                
+                # 创建翻译后的记录，保持其他字段不变
+                translated_record = [
+                    uid,
+                    tr_primary,
+                    tr_second
+                ] + record[3:]  # 姓名、头发长度、头发颜色、肤色代码等其他字段保持不变
+                
+                translated_data.append(translated_record)
+                self.logger.debug(f"翻译UID {uid}: '{primary}'->'{tr_primary}', '{second}'->'{tr_second}'")
+                
+            except IndexError:
+                self.logger.error(f"记录格式错误: {record}")
+            except Exception as e:
+                self.logger.error(f"翻译记录时出错: {str(e)}")
 
-        self.logger.info("RTF data has been successfully translated into English!")
+        self.logger.info(f"成功将 {len(translated_data)} 条记录翻译为英文")
         return translated_data
