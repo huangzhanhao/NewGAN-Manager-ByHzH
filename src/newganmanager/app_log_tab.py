@@ -38,7 +38,7 @@ class LogTab:
             app: Application instance 应用实例
         """
         self.app = app  # Application instance 应用实例
-        
+
         # Log storage and queue
         # 日志存储和队列
         self.log_store = []  # Store log records for filtering 存储日志记录用于筛选
@@ -46,7 +46,7 @@ class LogTab:
         self.log_queue = queue.Queue(maxsize=5000)  # Thread-safe log queue 线程安全日志队列
         self.current_log_level = logging.INFO  # Default log level 默认日志级别
         self.show_only_current_level = False  # 单选框状态：是否只显示当前级别
-        
+
         # Start log processing thread
         # 启动日志处理线程
         self.log_thread = threading.Thread(target=self._process_logs, daemon=True)
@@ -97,7 +97,7 @@ class LogTab:
         self.clear_logarea_button = toga.Button(
             text="Clear Logs", on_press=self._clear_logs, style=Pack(margin=5)
         )
-        
+
         # 创建单选框组件
         self.level_switch = toga.Switch(
             text='only show logLevel:',
@@ -115,7 +115,7 @@ class LogTab:
             on_change=self._on_log_level_changed,
             style=Pack(margin=5, width=120)
         )
-        
+
         # Update top row
         # 更新顶部行
         self.top_row = toga.Box(
@@ -153,32 +153,31 @@ class LogTab:
             try:
                 # 从队列获取日志记录
                 record = self.log_queue.get(timeout=0.5)
-                
+
                 # 存储日志记录
                 self._store_log(record)
-                
+
                 # 更新UI
                 self._update_ui([record])
-                
+
                 # 写入日志文件
                 if self.file_handler:
                     try:
                         self.file_handler.emit(record)
                     except Exception as e:
                         print(f"Error writing to log file: {e}")
-                
+
             except queue.Empty:
                 continue
             except Exception as e:
                 print(f"Error in log processing thread: {e}")
-                
 
     def _store_log(self, record):
         """存储日志记录"""
         if len(self.log_store) >= self.max_log_store:
             self.log_store.pop(0)
         self.log_store.append(record)
-        
+
     def _update_ui(self, records):
         """更新UI显示"""
         if not hasattr(self, "log_area") or not self.log_area:
@@ -197,23 +196,20 @@ class LogTab:
                 record for record in records
                 if record.levelno >= self.current_log_level
             ]
-        
+
         if not filtered_records:
             return
-            
-            # 记录日志筛选模式变化
-            level_mode = "EXACT" if self.show_only_current_level else "LEVEL_AND_ABOVE"
-            self.app.logger.info(f"Log filter changed: level={selected}, mode={level_mode}")
+
         log_text = "\n".join(self.formatter.format(record) for record in filtered_records)
-        
+
         # 安全更新UI
         def update():
             self.log_area.value += log_text + "\n"
             self.log_area.scroll_to_bottom()
-            
+
         if hasattr(self.app, "loop") and self.app.loop:
             self.app.loop.call_soon_threadsafe(update)
-            
+
     def _on_log_level_changed(self, widget):
         """当日志级别改变时回调"""
         selected = self.level_selector.value
@@ -222,14 +218,14 @@ class LogTab:
             self.log_area.value = ""  # Clear current display
             # 刷新所有日志显示
             self._update_ui(self.log_store)
-        
+
     def _on_show_level_changed(self, widget):
         """当单选框状态改变时回调"""
         self.show_only_current_level = widget.value
         # 刷新所有日志显示
         self.log_area.value = ""
         self._update_ui(self.log_store)
-        
+
     def _open_log_file(self, widget):
         """
         Open the log file

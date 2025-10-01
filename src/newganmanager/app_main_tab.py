@@ -286,7 +286,7 @@ class MainTab:
         try:
             dialog = toga.OpenFileDialog(title="Open RTF file", multiple_select=False, file_types=["rtf"])
             fname = await self.app.main_window.dialog(dialog)
-            self.app.logger.info("Created file-dialog")
+            self.app.logger.debug("Created file-dialog")
             if fname is not None:
                 fname = str(fname)
                 self.rtf_input.value = fname

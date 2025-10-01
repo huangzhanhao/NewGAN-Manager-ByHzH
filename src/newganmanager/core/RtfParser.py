@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import os
+from turtle import st
 
 
 class RtfParser:
@@ -19,7 +20,7 @@ class RtfParser:
             r"\s*[^|]+\s*\|"                        # 姓名字段(前后都有"|"符号)
             r"\s*[\d]+\s*\|"                        # 头发长度字段(前后都有"|"符号)
             r"\s*[\d]+\s*\|"                        # 头发颜色字段(前后都有"|"符号)
-            r"\s*[\d]+\s*\|"                        # 人种肤色字段(前后都有"|"符号)
+            r"\s*[\d]+\s*\|"                        # 种族肤色字段(前后都有"|"符号)
         )
         # 添加新的正则表达式用于匹配包含中文的RTF文件
         self.rtf_regex_chn = re.compile(
@@ -29,22 +30,22 @@ class RtfParser:
             r"\s*[^|]+\s*\|"                        # 姓名字段(前后都有"|"符号)
             r"\s*[\d]+\s*\|"                        # 头发长度字段(前后都有"|"符号)
             r"\s*[\d]+\s*\|"                        # 头发颜色字段(前后都有"|"符号)
-            r"\s*[\d]+\s*\|"                        # 人种肤色字段(前后都有"|"符号)
+            r"\s*[\d]+\s*\|"                        # 种族肤色字段(前后都有"|"符号)
         )        
         self.logger = logging.getLogger("NewGAN App") 
 
     def parse_rtf(self, path):
         """
         解析RTF文件，提取球员数据
-        字段顺序：UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码
+        字段顺序：UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 种族代码
 
         Args:
             path (str): RTF文件的路径
 
         Returns:
             list: 包含球员信息的列表，每个球员信息是一个包含以下元素的列表：
-                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码] 或
-                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码, 是否为随机人, 面部, 俱乐部, 年龄, 身高, 体重]
+                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 种族代码] 或
+                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 种族代码, 肤色代码, 面部, 俱乐部, 年龄, 身高, 体重, 是否为随机人]
         """
         # 验证RTF文件格式
         if not self.check_rtf_valid(path):
@@ -91,6 +92,9 @@ class RtfParser:
                             if not uid.isdigit():
                                 self.logger.info(f"行 {line_count}: 无效的UID - 跳过")
                                 continue
+                            else:
+                                # 默认为随机人编号，添加r-前缀
+                                uid = str("r-" + uid)
                             
                             # 验证肤色代码
                             skin_code_valid = True
@@ -120,9 +124,12 @@ class RtfParser:
                             # 处理附加字段（如果有）
                             if len(fields) > 7:
                                 # 处理可能的零宽空格字符
-                                if len(fields) >12 and ("\u200b" in fields[12] or "\u200b" in fields[13]):
+                                if len(fields) >12 and ("\u200b" in fields[11] or "\u200b" in fields[12]):
+                                    fields[11] = fields[11].replace("\u200b", "")
                                     fields[12] = fields[12].replace("\u200b", "")
-                                    fields[13] = fields[13].replace("\u200b", "")
+                                # 从附加字段判断是否属于随机人，处理UID中的"r-"前缀
+                                if len(fields) > 13 and ("No" in fields[13] or "否" in fields[13]):
+                                    base_data[0] = uid.replace("r-", "")  # 更新UID
                                 # 提取附加字段
                                 additional_fields = fields[7:]
                                 # 创建详细数据记录
@@ -221,7 +228,7 @@ class RtfParser:
     def translate_rtf_data_to_english(self, rtf_data):
         """
         将传入的rtf_data数据翻译为英文
-        注意：字段顺序已更新为 [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码, ...]
+        注意：字段顺序已更新为 [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 种族代码, ...]
 
         Args:
             rtf_data (list): 需要翻译的RTF数据列表
@@ -237,14 +244,14 @@ class RtfParser:
         tr_map = {}
         try:
             with open(translation_json_path, "r", encoding="utf-8") as file:
-                self.logger.info("从路径加载翻译文件: %s", translation_json_path)
+                self.logger.info(f"加载翻译文件: {translation_json_path}")
                 translation_data = json.load(file)
                 tr_map = translation_data.get(self.rtf_language, {})
         except FileNotFoundError:
-            self.logger.error("翻译映射表文件未找到")
+            self.logger.error(f"翻译映射表文件未找到: {translation_json_path}")
             return rtf_data
         except json.JSONDecodeError:
-            self.logger.error("翻译映射表文件解析失败")
+            self.logger.error(f"翻译映射表文件解析失败: {translation_json_path}")
             return rtf_data
 
         # 检查翻译映射表是否为空

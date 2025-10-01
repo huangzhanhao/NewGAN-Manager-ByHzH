@@ -9,142 +9,225 @@ class Mapper:
         self.img_dir = img_dir
         self.profile_manager = prf_manager
         self.eth_map = {}
+        # 获取所有人种分类目录名称
         eth_dirs = [f.name for f in os.scandir(img_dir) if f.is_dir()]
+        # 为每个人种分类建立图片文件名集合
         for dir in eth_dirs:
             dir_imgs = set([f.name.split('.')[0] for f in os.scandir(img_dir+dir) if f.is_file()])
             self.eth_map[dir] = dir_imgs
-
-        logger = logging.getLogger('NewGAN App')
-        self.logger = logger
+        self.logger = logging.getLogger('NewGAN App')
 
     def generate_mapping(self, rtf_data, mode, duplicates=False):
+        """根据RTF数据生成球员面部图片映射关系
+        
+        Args:
+            rtf_data: 球员数据列表
+            mode (str): 处理模式，可选 "Preserve", "Overwrite" 或 "Generate"
+            duplicates (bool): 是否允许重复使用图片，默认为False
+            
+        Returns:
+            list: 包含球员ID、人种和图片文件名的映射列表
+        """
         mapping = []
-        prf_imgs = []
         xml_data = {}
+        prf_imgs = []
 
+        # 处理Preserve和Overwrite模式，读取现有配置
         if mode in ["Preserve", "Overwrite"]:
             xml_parser = XmlParser()
-            xml_data = xml_parser.parse_xml(self.img_dir+"config.xml")
+            xml_data = xml_parser.parse_xml(os.path.join(self.img_dir, "config.xml"))
             prf_imgs = self.get_xml_images(xml_data)
 
             if not duplicates:
                 for eth in self.eth_map:
                     self.eth_map[eth] = self.eth_map[eth] - set(prf_imgs)
 
-        for i, player in enumerate(rtf_data):
-            p_ethnic = None
-            n2_ethnic = None
-            if player[2]:
-                n2_ethnic = self.profile_manager.get_ethnic(player[2])
-            n1_ethnic = self.profile_manager.get_ethnic(player[1])
-            if n1_ethnic is None:
-                self.logger.info("Mapping for {} is missing. Skipping player {}".format(player[1], player[0]))
-                continue
-            self.logger.info("{}/{}: {}, {}, {}".format(i+1, len(rtf_data), player, n1_ethnic, n2_ethnic))
-            # if player is in config.xml and we use preserver or overwrite handle it properly
-            if player[0] in xml_data:
-                if mode == "Preserve":
-                    self.logger.info("Preserve: {} {} {}".format(player[0], xml_data[player[0]]["ethnicity"], xml_data[player[0]]["image"]))
-                    continue
-                elif mode == "Overwrite":
-                    prf_imgs.remove(xml_data[player[0]]["image"])
-                    del xml_data[player[0]]
-            if player[6] == "1":
-                if "Scandinavian" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "South American"
-                if "Seasian" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "South American"
-                if "Central European" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "South American"
-                if "Caucasian" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "South American"
-                if "African" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "South American"
-                if "Asian" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "South American"
-                if "MENA" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "South American"
-                if "MESA" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "South American"
-                if "EECA" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "EECA"
-                if "Italmed" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "Italmed"
-                if "SAMed" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "SAMed"
-                if "SpanMed" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "SpanMed"
-                if "YugoGreek" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "YugoGreek"
-                if "South American" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "South American"
-            elif player[6] in ["3", "6", "7", "8", "9"]:
-                # SAMed with 7 is light-skinned
-                if "SAMed" == n1_ethnic and player[6] == "7":
-                    p_ethnic = "SAMed"
-                # South American with 7 is light-skinned
-                elif "South American" == n1_ethnic and player[6] == "7":
-                    p_ethnic = "South American"
-                else:
-                    p_ethnic = "African"
-            elif player[6] == "10":
-                if "South American" == n1_ethnic:
-                    p_ethnic = "South American"
-                else:
-                    p_ethnic = "Asian"
-            elif player[6] == "2":
-                p_ethnic = "MENA"
-                if "MESA" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "MESA"
-            elif player[6] == "5":
-                p_ethnic = "Seasian"
-            elif player[6] == "0":
-                p_ethnic = "Central European"
-                if "Scandinavian" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "Scandinavian"
-                elif "Caucasian" in [n1_ethnic, n2_ethnic]:
-                    p_ethnic = "Caucasian"
-            elif player[6] == "4":
-                p_ethnic = "MESA"
-
-            # 确保p_ethnic不为None
-            if p_ethnic is None:
-                self.logger.error(f"无法确定球员 {player[0]} 的人种分类，跳过该球员")
-                continue
-                
-            # 检查人种分类是否有效
-            if p_ethnic not in self.eth_map:
-                self.logger.error(f"人种分类 '{p_ethnic}' 无效或未配置图片目录，跳过球员 {player[0]}")
-                continue
-                
-            # 基于人种分类选择图片
-            player_img = self.pick_image(p_ethnic, duplicates)
-            if player_img is None:
-                self.logger.info("人种分类 {} 没有可用面部图片，跳过球员 {}".format(p_ethnic, player[0]))
-                continue
-                
-            prf_imgs.append(player_img)
-            mapping.append([player[0], p_ethnic, player_img])
-        if mode in ["Overwrite", "Preserve"]:
-            self.post_rtf_hook(mapping, prf_imgs, xml_data)
+        self.logger.info(f"开始构建'球员-图片'映射关系，模式: {mode}...")
+        
+        # 根据模式选择处理方式
+        if mode == "Preserve":
+            mapping = self._process_preserve_mode(rtf_data, xml_data, duplicates)
+        elif mode == "Overwrite":
+            mapping = self._process_overwrite_mode(rtf_data, xml_data, duplicates)
+        else:  # Generate模式
+            mapping = self._process_generate_mode(rtf_data, duplicates)
+                   
+        self.logger.info(f"完成构建'球员-图片'映射关系，共 {len(mapping)}条记录")
         return mapping
 
-    def get_xml_images(self, xml_data):
-        return [i["image"] for i in xml_data.values()]
+    def correct_ethnic(self, player, temp_eth1, temp_eth2):
+        """根据球员肤色代码修正种族分类
+        
+        Args:
+            player: 球员数据
+            temp_eth1: 临时种族1（基于主要国籍）
+            temp_eth2: 临时种族2（基于第二国籍）
+            
+        Returns:
+            str: 修正后的种族分类
+        """
+        skin_code = player[6]
+        p_ethnic = temp_eth1  # 默认值
+        
+        if skin_code == "1":
+            if "EECA" in [temp_eth1, temp_eth2]:
+                p_ethnic = "EECA"
+            elif "Italmed" in [temp_eth1, temp_eth2]:
+                p_ethnic = "Italmed"
+            elif "SAMed" in [temp_eth1, temp_eth2]:
+                p_ethnic = "SAMed"
+            elif "SpanMed" in [temp_eth1, temp_eth2]:
+                p_ethnic = "SpanMed"
+            elif "YugoGreek" in [temp_eth1, temp_eth2]:
+                p_ethnic = "YugoGreek"
+            elif "South American" in [temp_eth1, temp_eth2]:
+                p_ethnic = "South American"
+            else:
+                p_ethnic = "Central European"
+                
+        elif skin_code in ["3", "6", "7", "8", "9"]:
+            if "SAMed" == temp_eth1 and skin_code == "7":
+                p_ethnic = "SAMed"
+            elif "South American" == temp_eth1 and skin_code == "7":
+                p_ethnic = "South American"
+            else:
+                p_ethnic = "African"
+                
+        elif skin_code == "10":
+            p_ethnic = "Asian" if temp_eth1 != "South American" else "South American"
+                
+        elif skin_code == "2":
+            p_ethnic = "MESA" if "MESA" in [temp_eth1, temp_eth2] else "MENA"
+                
+        elif skin_code == "5":
+            p_ethnic = "Seasian"
+                
+        elif skin_code == "0":
+            if "Scandinavian" in [temp_eth1, temp_eth2]:
+                p_ethnic = "Scandinavian"
+            elif "Caucasian" in [temp_eth1, temp_eth2]:
+                p_ethnic = "Caucasian"
+            else:
+                p_ethnic = "Central European"
+                
+        elif skin_code == "4":
+            p_ethnic = "MESA"
 
-    def pick_image(self, ethnicity, duplicates=False):
-        selection_pool = self.eth_map[ethnicity]
-        if len(selection_pool) == 0:
-            return None
-        choice = random.choice(tuple(selection_pool))
+        return p_ethnic
 
-        if not duplicates:
-            selection_pool.remove(choice)
-
-        return choice
-
-    def post_rtf_hook(self, mapping, prf_imgs, xml_data):
+    def _process_preserve_mode(self, rtf_data, xml_data, duplicates):
+        """处理Preserve模式逻辑"""
+        mapping = []
+        # 过滤掉XML中已存在的球员
+        filtered_rtf = [p for p in rtf_data if p[0] not in xml_data]
+        
+        for player in filtered_rtf:
+            player_mapping = self._build_player_mapping(player, duplicates)
+            if player_mapping:
+                mapping.append(player_mapping)
+                
+        # 添加XML中所有球员
+        self.logger.debug(f"Preserve模式保留原有XML球员映射，共 {len(xml_data)} 条记录")
         for uid, values in xml_data.items():
-            p_ethnic = values["ethnicity"]
-            player_img = values["image"]
-            mapping.append([uid, p_ethnic, player_img])
+            mapping.append([uid, values["ethnicity"], values["image"]])
+            
+        return mapping
+
+    def _process_overwrite_mode(self, rtf_data, xml_data, duplicates):
+        """处理Overwrite模式逻辑"""
+        mapping = []
+        
+        for player in rtf_data:
+            player_mapping = self._build_player_mapping(player, duplicates)
+            if player_mapping:
+                mapping.append(player_mapping)
+                # 从XML数据中移除已处理的球员
+                if player[0] in xml_data:
+                    del xml_data[player[0]]
+        
+        # 添加剩余的XML球员
+        self.logger.debug(f"Overwrite模式保留未处理的XML球员映射，共 {len(xml_data)} 条记录")
+        for uid, values in xml_data.items():
+            mapping.append([uid, values["ethnicity"], values["image"]])
+            
+        return mapping
+
+    def _process_generate_mode(self, rtf_data, duplicates):
+        """处理Generate模式逻辑"""
+        return [self._build_player_mapping(p, duplicates) for p in rtf_data
+                if self._build_player_mapping(p, duplicates) is not None]
+
+    def _build_player_mapping(self, player, duplicates):
+        """为单个球员构建映射关系"""
+        # 获取临时种族分类
+        n2_ethnic = self.profile_manager.get_ethnic(player[2]) if player[2] else None
+        n1_ethnic = self.profile_manager.get_ethnic(player[1])
+        
+        if n1_ethnic is None:
+            self.logger.warning(f"球员 {player[0]} 的主要国籍 {player[1]} 无对应种族映射，跳过")
+            return None
+
+        # 修正种族分类
+        p_ethnic = self.correct_ethnic(player, n1_ethnic, n2_ethnic)
+        if p_ethnic is None:
+            self.logger.error(f"无法确定球员 {player[0]} 的种族分类，跳过")
+            return None
+            
+        if p_ethnic not in self.eth_map:
+            self.logger.error(f"种族分类 '{p_ethnic}' 无效，跳过球员 {player[0]}")
+            return None
+            
+        # 获取图片池并选择图片
+        image_pools = self._get_image_pool(p_ethnic, player[1])
+        player_img = self.pick_image_from_pools(image_pools, duplicates)
+        if player_img is None:
+            self.logger.warning(f"人种分类 {p_ethnic} 无可用图片，跳过球员 {player[0]}")
+            return None
+        
+        self.logger.debug(f"构建'球员-图片'映射关系: [{player[0]}, {p_ethnic}, {player_img}]")
+        return [player[0], p_ethnic, player_img]
+
+    def _get_image_pool(self, ethnicity, nationality):
+        """获取优先级图片池：国籍文件夹 > 国籍+人种 > 默认池
+        
+        Returns:
+            list: 优先级图片池列表
+        """
+        pools = []
+        # 1. 国籍文件夹
+        if nationality in self.eth_map and self.eth_map[nationality]:
+            pools.append(self.eth_map[nationality])
+            
+        # 2. 国籍+人种组合文件夹
+        nat_eth = f"{nationality}_{ethnicity}"
+        if nat_eth in self.eth_map and self.eth_map[nat_eth]:
+            pools.append(self.eth_map[nat_eth])
+            
+        # 3. 默认人种池
+        pools.append(self.eth_map[ethnicity])
+        
+        return pools
+
+    def pick_image_from_pools(self, pools, duplicates=False):
+        """从多个图片池中选择一张图片"""
+        for pool in pools:
+            if pool:  # 检查池是否非空
+                choice = random.choice(tuple(pool))
+                if not duplicates:
+                    pool.remove(choice)
+                return choice
+        return None
+        
+    def pick_image(self, ethnicity, duplicates=False):
+        """从指定种族分类中选择一张图片（兼容旧版）"""
+        return self.pick_image_from_pools([self.eth_map[ethnicity]], duplicates)
+    def get_xml_images(self, xml_data):
+        """从XML数据中提取已使用的图片列表
+        
+        Args:
+            xml_data: XML配置数据
+            
+        Returns:
+            list: 图片文件名列表
+        """
+        return [i["image"] for i in xml_data.values()]
