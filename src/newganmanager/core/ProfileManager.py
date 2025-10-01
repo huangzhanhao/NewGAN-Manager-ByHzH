@@ -159,7 +159,7 @@ class ProfileManager(ConfigManager):
                 xml_string = []
             for dat in data:
                 xml_string.append(
-                    '<record from="{}" to="graphics/pictures/person/r-{}/portrait"/>'.format(
+                    '<record from="{}" to="graphics/pictures/person/{}/portrait"/>'.format(
                         dat[1] + "/" + dat[2], dat[0]
                     )
                 )
