@@ -8,6 +8,7 @@ from .core.RtfParser import RtfParser
 from .core.XmlParser import XmlParser
 from .core.Reporter import Reporter
 from .core.SourceSelection import SourceSelection
+from .core.ReplaceFaceHandler import ReplaceFaceHandler
 
 
 class MainTab:
@@ -116,8 +117,7 @@ class MainTab:
         )
         self.main_tab_box.add(self.mode_box)
 
-        # BOTTOM Generation
-        self.generate_button = toga.Button(
+        self.replace_faces_button = toga.Button(
             text="Replace Faces",
             on_press=self._replace_faces,
             enabled=False,
@@ -140,7 +140,7 @@ class MainTab:
 
         # Create generation box with children
         self.gen_box = toga.Box(
-            children=[self.generate_button, self.status_progress_box],
+            children=[self.replace_faces_button, self.status_progress_box],
             style=Pack(direction=COLUMN, flex=1)
         )
         self.main_tab_box.add(self.gen_box)
@@ -153,22 +153,22 @@ class MainTab:
         Args:
             value: Button enabled state 按钮启用状态
         """
-        if not all([self.generate_button, self.dir_button, self.rtf_button]):
+        if not all([self.replace_faces_button, self.dir_button, self.rtf_button]):
             return
 
         if self.app.profile_manager and self.app.profile_manager.cur_prf == "No Profile":
-            self.generate_button.enabled = False
+            self.replace_faces_button.enabled = False
             self.dir_button.enabled = False
             self.rtf_button.enabled = False
         elif self.app.profile_manager and (
             self.app.profile_manager.prf_cfg.get("img_dir", "") == ""
             or self.app.profile_manager.prf_cfg.get("rtf", "") == ""
         ):
-            self.generate_button.enabled = False
+            self.replace_faces_button.enabled = False
             self.dir_button.enabled = value
             self.rtf_button.enabled = value
         else:
-            self.generate_button.enabled = value
+            self.replace_faces_button.enabled = value
             self.dir_button.enabled = value
             self.rtf_button.enabled = value
 
@@ -188,7 +188,7 @@ class MainTab:
         self.profile_list.add_item(name)
         self.profile_list.value = name
         self.create_input.value = None
-        self._refresh_inp(True)
+        self._refresh_input_text(True)
         self.set_btns(True)
 
     def _delete_profile(self, widget):
@@ -207,7 +207,7 @@ class MainTab:
             return
         self.profile_list.remove_item(prf)
         self.profile_list.value = "No Profile"
-        self._refresh_inp(True)
+        self._refresh_input_text(clear=True)
         self.set_btns(False)
 
     def _set_profile_status(self, e):
@@ -218,34 +218,30 @@ class MainTab:
         Args:
             e: Event object 事件对象
         """
-        self.app.logger.info("switch profile: {}".format(e.value))
+        self.app.logger.info(f"switch profile: {e.value}")
         if e.value is None:
-            self.app.logger.info("catch none {}".format(self.app.profile_manager.cur_prf))
+            self.app.logger.info(f"catch none {self.app.profile_manager.cur_prf}")
         elif e.value == self.app.profile_manager.cur_prf:
             self.app.logger.info("catch same values")
 
         else:
             name = e.value
             self.app.profile_manager.load_profile(name)
-            self._refresh_inp()
+            self._refresh_input_text()
             self.set_btns(True)
             self.app.profile_manager.config_manager.save_config(
                 str(self.app.paths.app)+"/.user/cfg.json", 
                 self.app.profile_manager.config
             )
 
-    def _refresh_inp(self, clear=False):
+    def _refresh_input_text(self, clear=False):
         if clear:
             self.dir_input.value = None
             self.rtf_input.value = None
         else:
             self.dir_input.value = self.app.profile_manager.prf_cfg['img_dir']
             self.rtf_input.value = self.app.profile_manager.prf_cfg['rtf']
-        self.app.logger.debug(
-            "Refresh InputText. Dir_input: %s, Rtf_input: %s",
-            self.dir_input.value,
-            self.dir_input.value,
-        )
+        self.app.logger.debug(f"Refresh InputText. Dir_input: {self.dir_input.value}, Rtf_input: {self.dir_input.value}")
 
     async def action_select_folder_dialog(self, widget):
         """
@@ -286,12 +282,11 @@ class MainTab:
         try:
             dialog = toga.OpenFileDialog(title="Open RTF file", multiple_select=False, file_types=["rtf"])
             fname = await self.app.main_window.dialog(dialog)
-            self.app.logger.debug("Created file-dialog")
             if fname is not None:
                 fname = str(fname)
                 self.rtf_input.value = fname
                 self.app.profile_manager.prf_cfg["rtf"] = fname
-                self.app.logger.info("RTF file: " + fname)
+                self.app.logger.info(f"RTF file: {fname}")
                 self.app.profile_manager.config_manager.save_config(
                     str(self.app.paths.app) + "/.user/" + self.app.profile_manager.cur_prf + ".json", 
                     self.app.profile_manager.prf_cfg
@@ -310,31 +305,36 @@ class MainTab:
 
     def update_mode_info_by_selection(self, widget):
         self.mode_info_label.text = self.app.mode_info.get(widget.value, "Unknown mode")
-        self.app.logger.debug("Updating mode info label: {}".format(self.app.mode_info.get(widget.value, "Unknown mode")))
+        self.app.logger.debug(f"Updating mode info label: {self.app.mode_info.get(widget.value, 'Unknown mode')}")
 
-    async def _replace_faces(self, widget):
+    async def _validate_rtf_file(self, rtf_path):
         """
-        Replace faces (async internal method)
-        替换头像 (异步内部方法)
+        Validate RTF file existence and clear path if invalid
+        验证RTF文件是否存在，如果无效则清除路径
 
         Args:
-            widget: The widget that triggered the event 触发事件的组件
+            rtf_path: Path to the RTF file RTF文件路径
         """
-        self.app.logger.info("Start Replace Faces")
-        rtf = self.app.profile_manager.prf_cfg['rtf']
-        img_dir = self.app.profile_manager.prf_cfg['img_dir']
-        profile = self.app.profile_manager.cur_prf
-        mode = self.mode_selection.value
-        if not os.path.isfile(rtf):
+        if not os.path.isfile(rtf_path):
+            self.app.logger.error(f"RTF file doesn't exist: {rtf_path}")
             await self.app.throw_error("The RTF file doesn't exist!")
-            self.progress_bar.stop()
             self.app.profile_manager.prf_cfg['rtf'] = ''
-            return
+            self.set_btns(False)
+            return False
+        return True
+
+    async def _validate_image_directory(self, img_dir):
+        """
+        Validate image directory existence and required subfolders
+        验证图片目录是否存在以及所需的子文件夹
+
+        Args:
+            img_dir: Path to the image directory 图片目录路径
+        """
         if not os.path.isdir(img_dir):
             await self.app.throw_error("The image directory doesn't exist!")
-            self.progress_bar.stop()
             self.app.profile_manager.prf_cfg['img_dir'] = ''
-            return
+            return False
 
         # Check if valid image_directory contains all the needed subfolders
         # 检查有效的图像目录是否包含所有需要的子文件夹
@@ -346,26 +346,52 @@ class MainTab:
             if fp_dir not in img_dirs:
                 # Ask user if they want to create the missing directory
                 # 询问用户是否要创建缺失的目录
-                dialog = toga.QuestionDialog("Missing Directory", "Folder '{}' is missing in the image directory. Do you want to create it and continue?".format(fp_dir))
+                self.app.logger.info(f"Folder '{fp_dir}' is missing in the image directory")
+                dialog = toga.QuestionDialog("Missing Directory", f"Folder '{fp_dir}' is missing in the image directory. Do you want to create it and continue?")
                 user_choose = await self.app.main_window.dialog(dialog)
-                self.app.logger.debug("Question window: Missing Directory.   Folder '{}' is missing in the image directory. Do you want to create it and continue?".format(fp_dir))
-                self.app.logger.debug("User choose: {}".format(user_choose))
                 if user_choose:
+                    self.app.logger.info(f"Creating directory: {fp_dir}")
                     try:
                         os.makedirs(os.path.join(img_dir, fp_dir), exist_ok=True)
-                        self.app.logger.info("Created directory: {}".format(fp_dir))
+                        self.app.logger.info(f"Created directory: {fp_dir}")
                         continue
                     except Exception as e:
-                        await self.app.throw_error("Failed to create directory {}: {}".format(fp_dir, str(e)))
-                        self.progress_bar.stop()
-                        return
+                        await self.app.throw_error(f"Failed to create directory {fp_dir}: {str(e)}")
+                        return False
                 else:
                     # User chose not to create the directory, show error and stop
                     # 用户选择不创建目录，显示错误并停止
-                    await self.app.throw_error("Folder {} is missing in the image directory".format(fp_dir))
-                    self.progress_bar.stop()
-                    return
+                    self.app.logger.error(f"Folder '{fp_dir}' is missing in the image directory, and user chose not to create it.")
+                    await self.app.throw_error(f"Folder {fp_dir} is missing in the image directory")
+                    return False
+        return True
 
+    async def _replace_faces(self, widget):
+        """
+        Replace faces (async internal method)
+        替换头像 (异步内部方法)
+
+        Args:
+            widget: The widget that triggered the event 触发事件的组件
+        """
+        self.app.logger.info("Start Replace Faces")    
+        self.progress_bar.value = 0
+        self.status_label.text = ''
+        rtf = self.app.profile_manager.prf_cfg['rtf']
+        img_dir = self.app.profile_manager.prf_cfg['img_dir']
+        profile = self.app.profile_manager.cur_prf
+        mode = str(self.mode_selection.value) if self.mode_selection.value else "Preserve"
+        
+        # Validate RTF file
+        if not await self._validate_rtf_file(rtf):
+            self.progress_bar.stop()
+            return
+        
+        # Validate image directory
+        if not await self._validate_image_directory(img_dir):
+            self.progress_bar.stop()
+            return
+        
         self.app.logger.info("rtf: {}".format(rtf))
         self.app.logger.info("img_dir: {}".format(img_dir))
         self.app.logger.info("profile: {}".format(profile))
@@ -419,6 +445,4 @@ class MainTab:
         await asyncio.sleep(0.1)
         await self.app.show_info("Finished! :)")
         self.progress_bar.stop()
-        self.progress_bar.value = 0
-        self.status_label.text = ''
         self.set_btns(True)
