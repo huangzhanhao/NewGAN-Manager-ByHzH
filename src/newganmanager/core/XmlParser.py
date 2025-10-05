@@ -24,7 +24,7 @@ class XmlParser:
                     try:
                         uid_match = self.uid_regex.search(line)
                         if uid_match:
-                            count = count + 1
+                            count += 1
                             uid = uid_match.group(1).strip()
                             eth_img_match = self.eth_img_regex.search(line)
                             if eth_img_match:
@@ -35,17 +35,16 @@ class XmlParser:
                                         "ethnicity": eth_img[0],
                                         "image": eth_img[1]
                                     }
-                                    self.logger.debug(f"正在解析第{count}条xml数据行: {result_data[uid]}")
+                                    self.logger.debug(f"正在解析XML的第{count}条记录: {result_data[uid]}")
                     except Exception as e:
-                        self.logger.warning(f"解析行时出错: {line[:50]}... 错误: {str(e)}")
+                        self.logger.warning(f"解析XML记录时出错: {line[:50]}... 错误: {str(e)}")
                         continue
-
         except FileNotFoundError:
             self.logger.error(f"文件未找到: {path}")
         except Exception as e:
             self.logger.error(f"处理文件时发生错误: {str(e)}")
         finally:
-            self.logger.info(f"已完成解析config.xml内容，共找到{len(result_data)}条记录")
+            self.logger.info(f"完成解析config.xml内容，共找到{len(result_data)}条记录")
             return result_data
 
     def get_imgpath_from_uid(self, path, uid):
@@ -67,10 +66,8 @@ class XmlParser:
                     except Exception as e:
                         self.logger.warning(f"解析行时出错: {line[:50]}... 错误: {str(e)}")
                         continue
-
         except FileNotFoundError:
             self.logger.error(f"文件未找到: {path}")
         except Exception as e:
-            self.logger.error(f"处理文件时发生错误: {str(e)}")
-        
+            self.logger.error(f"处理文件时发生错误: {str(e)}")     
         return None

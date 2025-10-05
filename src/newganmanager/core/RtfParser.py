@@ -20,7 +20,7 @@ class RtfParser:
             r"\s*[^|]+\s*\|"                        # 姓名字段(前后都有"|"符号)
             r"\s*[\d]+\s*\|"                        # 头发长度字段(前后都有"|"符号)
             r"\s*[\d]+\s*\|"                        # 头发颜色字段(前后都有"|"符号)
-            r"\s*[\d]+\s*\|"                        # 种族肤色字段(前后都有"|"符号)
+            r"\s*[\d]+\s*\|"                        # 种族字段(前后都有"|"符号)
         )
         # 添加新的正则表达式用于匹配包含中文的RTF文件
         self.rtf_regex_chn = re.compile(
@@ -30,9 +30,9 @@ class RtfParser:
             r"\s*[^|]+\s*\|"                        # 姓名字段(前后都有"|"符号)
             r"\s*[\d]+\s*\|"                        # 头发长度字段(前后都有"|"符号)
             r"\s*[\d]+\s*\|"                        # 头发颜色字段(前后都有"|"符号)
-            r"\s*[\d]+\s*\|"                        # 种族肤色字段(前后都有"|"符号)
+            r"\s*[\d]+\s*\|"                        # 种族字段(前后都有"|"符号)
         )        
-        self.logger = logging.getLogger("NewGAN App") 
+        self.logger = logging.getLogger("NewGAN App")
 
     def parse_rtf(self, path):
         """
@@ -48,9 +48,9 @@ class RtfParser:
                   [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 种族代码, 肤色代码, 面部, 俱乐部, 年龄, 身高, 体重, 是否为随机人]
         """
         # 验证RTF文件格式
-        if not self.check_rtf_valid(path):
-            self.logger.error("无效的RTF文件格式")
-            return []
+        # if not self.check_rtf_valid(path):
+        #     self.logger.error("无效的RTF文件格式")
+        #     return []
         
         # 重置数据
         self.rtf_data = []
@@ -209,13 +209,13 @@ class RtfParser:
         # 检查RTF数据是否匹配预期的格式模式
         if self.rtf_regex.search(rtf_data) :
             self.rtf_language = "English"
-            self.logger.info("The RTF file format is correct, and the RTF file data language is： %s", self.rtf_language)
+            self.logger.info(f"The RTF file format is correct, and the RTF file data language is: {self.rtf_language}")
             self.is_rtf_valid = True
             return self.is_rtf_valid
 
         elif self.rtf_regex_chn.search(rtf_data):
             self.rtf_language = "简体中文"
-            self.logger.info("RTF文件格式正确，RTF文件数据语言为： %s", self.rtf_language)
+            self.logger.info(f"RTF文件格式正确，RTF文件数据语言为: {self.rtf_language}")
             self.is_rtf_valid = True
             return self.is_rtf_valid
 
@@ -228,7 +228,7 @@ class RtfParser:
     def translate_rtf_data_to_english(self, rtf_data):
         """
         将传入的rtf_data数据翻译为英文
-        注意：字段顺序已更新为 [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 种族代码, ...]
+        字段顺序为 [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 种族代码, ...]
 
         Args:
             rtf_data (list): 需要翻译的RTF数据列表
@@ -239,20 +239,29 @@ class RtfParser:
         if self.rtf_language == "English":
             self.logger.info("当前RTF数据语言为英文，无需翻译")
             return rtf_data
-
-        translation_json_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".config", "translation.json")
-        tr_map = {}
-        try:
-            with open(translation_json_path, "r", encoding="utf-8") as file:
-                self.logger.info(f"加载翻译文件: {translation_json_path}")
-                translation_data = json.load(file)
-                tr_map = translation_data.get(self.rtf_language, {})
-        except FileNotFoundError:
-            self.logger.error(f"翻译映射表文件未找到: {translation_json_path}")
-            return rtf_data
-        except json.JSONDecodeError:
-            self.logger.error(f"翻译映射表文件解析失败: {translation_json_path}")
-            return rtf_data
+        # 检查是否已有缓存且语言匹配，避免重复加载翻译文件
+        if not hasattr(self, '_translation_cache') or self._translation_cache.get('language') != self.rtf_language:
+            translation_json_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".config", "translation.json")
+            tr_map = {}
+            try:
+                with open(translation_json_path, "r", encoding="utf-8") as file:
+                    self.logger.info(f"加载翻译文件: {translation_json_path}")
+                    translation_data = json.load(file)
+                    tr_map = translation_data.get(self.rtf_language, {})
+                    # 初始化并缓存翻译映射表
+                    self._translation_cache = {
+                        'language': self.rtf_language,
+                        'map': tr_map
+                    }
+            except FileNotFoundError:
+                self.logger.error(f"翻译映射表文件未找到: {translation_json_path}")
+                return rtf_data
+            except json.JSONDecodeError:
+                self.logger.error(f"翻译映射表文件解析失败: {translation_json_path}")
+                return rtf_data
+        else:
+            # 使用缓存的翻译映射表，避免重复加载翻译文件
+            tr_map = self._translation_cache['map']
 
         # 检查翻译映射表是否为空
         if not tr_map:
@@ -262,29 +271,25 @@ class RtfParser:
         translated_data = []
         for record in rtf_data:
             try:
-                # 新字段顺序: [0]UID, [1]主要国籍, [2]第二国籍, [3]姓名, [4]头发长度, [5]头发颜色, [6]肤色代码...
+                # 字段顺序: [0]UID, [1]主要国籍, [2]第二国籍, [3]姓名, [4]头发长度, [5]头发颜色, [6]种族代码...
                 uid = record[0]
                 primary = record[1]
                 second = record[2]
-                
                 # 翻译主要国籍和第二国籍
                 tr_primary = tr_map.get(primary.strip(), primary)
                 tr_second = tr_map.get(second.strip(), second) if second else ""
-                
                 # 创建翻译后的记录，保持其他字段不变
                 translated_record = [
                     uid,
                     tr_primary,
                     tr_second
                 ] + record[3:]  # 姓名、头发长度、头发颜色、肤色代码等其他字段保持不变
-                
                 translated_data.append(translated_record)
-                self.logger.debug(f"翻译UID {uid}: '{primary}'->'{tr_primary}', '{second}'->'{tr_second}'")
-                
+                self.logger.debug(f"翻译UID {uid}: '{primary}'->'{tr_primary}', '{second}'->'{tr_second}'")            
             except IndexError:
-                self.logger.error(f"记录格式错误: {record}")
+                self.logger.error(f"rtf记录格式错误: {record}")
             except Exception as e:
-                self.logger.error(f"翻译记录时出错: {str(e)}")
+                self.logger.error(f"翻译rtf记录时出错: {str(e)}")
 
         self.logger.info(f"成功将 {len(translated_data)} 条记录翻译为英文")
         return translated_data

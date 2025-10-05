@@ -24,19 +24,7 @@ class QueueHandler(logging.Handler):
             self.handleError(record)
 
 class LogTab:
-    """
-    Log tab UI components and functionality
-    日志标签页UI组件和功能
-    """
-
     def __init__(self, app):
-        """
-        Initialize log tab UI and logging system with enhanced features
-        初始化日志标签页UI和日志系统，包含增强功能
-
-        Args:
-            app: Application instance 应用实例
-        """
         self.app = app  # Application instance 应用实例
 
         # Log storage and queue
@@ -81,9 +69,7 @@ class LogTab:
 
         # Log application startup information
         # 记录应用启动信息
-        self.app.logger.info(
-            "Starting Application\n-----------------------------------------"
-        )
+        self.app.logger.info("Starting Application\n-----------------------------------------")
         self.app.logger.info(str(self.app.paths.app))
 
         # Setup top row with label, log level selector, open file button, and clear button
@@ -100,9 +86,9 @@ class LogTab:
 
         # 创建单选框组件
         self.level_switch = toga.Switch(
-            text='only show logLevel:',
+            text='only show this level:',
             value=False,
-            on_change=self._on_show_level_changed,
+            on_change=self._on_show_this_level_changed,
             style=Pack(margin=5)
         )
 
@@ -116,8 +102,6 @@ class LogTab:
             style=Pack(margin=5, width=120)
         )
 
-        # Update top row
-        # 更新顶部行
         self.top_row = toga.Box(
             children=[
                 self.log_label,
@@ -135,8 +119,6 @@ class LogTab:
             readonly=True, flex=1, style=Pack(margin=5)
         )
 
-        # Setup container box
-        # 设置容器框
         self.log_tab_box = toga.Box(
             children=[self.top_row, self.log_area],
             style=Pack(direction=COLUMN, margin=5),
@@ -219,7 +201,7 @@ class LogTab:
             # 刷新所有日志显示
             self._update_ui(self.log_store)
 
-    def _on_show_level_changed(self, widget):
+    def _on_show_this_level_changed(self, widget):
         """当单选框状态改变时回调"""
         self.show_only_current_level = widget.value
         # 刷新所有日志显示
@@ -227,17 +209,10 @@ class LogTab:
         self._update_ui(self.log_store)
 
     def _open_log_file(self, widget):
-        """
-        Open the log file
-        打开日志文件
-
-        Args:
-            widget: The widget that triggered the event 触发事件的组件
-        """
+        """当打开日志文件按钮点击时回调"""
         try:
             if self.log_file_path and os.path.exists(self.log_file_path):
                 system_name = platform.system()
-
                 if system_name == "Windows":
                     # Windows: use notepad or default text editor
                     # Windows: 使用记事本或默认文本编辑器
@@ -253,16 +228,8 @@ class LogTab:
             else:
                 self.app.logger.warning("Log file not found or not accessible")
         except Exception as e:
-            # Log the error but don't disrupt the application
-            # 记录错误但不干扰应用程序
             self.app.logger.error(f"Failed to open log file: {e}")
 
     def _clear_logs(self, widget):
-        """
-        Clear only the GUI log area
-        清除GUI日志区域
-
-        Args:
-            widget: The widget that triggered the event 触发事件的组件
-        """
+        """当清除日志按钮点击时回调"""
         self.log_area.value = ""
