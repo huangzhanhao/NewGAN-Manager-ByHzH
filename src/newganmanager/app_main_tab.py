@@ -3,37 +3,33 @@ from toga.style import Pack
 from travertino.constants import COLUMN, ROW
 import os
 import asyncio
-from .core.Mapper import Mapper
+from .core.FaceMapper import FaceMapper
 from .core.RtfParser import RtfParser
 from .core.XmlParser import XmlParser
 from .core.Reporter import Reporter
 from .core.SourceSelection import SourceSelection
-from .core.ReplaceFaceHandler import ReplaceFaceHandler
 
 
 class MainTab:
     def __init__(self, app):
         self.app = app
-        # Create main box without margin to avoid layout issues
-        # 创建主框但不添加边距以避免布局问题
         self.main_tab_box = toga.Box(style=Pack(direction=COLUMN, margin=10))
 
         # Create UI sections with specified label width
         label_width = 110
         button_width = 70
 
-        # TOP Profiles - Create Profile
+        # Add UI components for "Create Profile"
         self.create_label = toga.Label(text="Create Profile: ", style=Pack(width=label_width, margin=5))
         self.create_input = toga.TextInput(placeholder="Enter your profile name", style=Pack(direction=ROW, margin=5, flex=1))
         self.create_button = toga.Button(text="Create", on_press=self._create_profile, style=Pack(width=button_width, margin=5))
-
         self.create_box = toga.Box(
             children=[self.create_label, self.create_input, self.create_button],
             style=Pack(direction=ROW, align_items='center')
         )
         self.main_tab_box.add(self.create_box)
 
-        # TOP Profiles - Select Profile
+        # Add UI components for "Select Profile"
         self.select_label = toga.Label(text="Select Profile: ", style=Pack(width=label_width, margin=5))
         self.profile_list = SourceSelection(
             items=list(self.app.profile_manager.config["Profile"].keys()),
@@ -42,14 +38,13 @@ class MainTab:
         )
         self.profile_list.value = self.app.profile_manager.cur_prf  # Current profile 当前配置文件
         self.delete_button = toga.Button(text="Delete", on_press=self._delete_profile, style=Pack(width=button_width, margin=5))
-
         self.sel_box = toga.Box(
             children=[self.select_label, self.profile_list, self.delete_button],
             style=Pack(direction=ROW)
         )
         self.main_tab_box.add(self.sel_box)
 
-        # MID Path selections - Images Directory
+        # Add UI components for "Images Directory"
         self.dir_label = toga.Label(text="Images Directory: ", style=Pack(width=label_width, margin=5))
         self.dir_input = toga.TextInput(
             readonly=True,
@@ -58,18 +53,17 @@ class MainTab:
         )
         self.dir_button = toga.Button(
             text="Browse",
-            on_press=self.action_select_folder_dialog,
+            on_press=self._action_select_folder_dialog,
             enabled=False,
             style=Pack(width=button_width, margin=5)
         )
-
         self.dir_box = toga.Box(
             children=[self.dir_label, self.dir_input, self.dir_button],
             style=Pack(direction=ROW)
         )
         self.main_tab_box.add(self.dir_box)
 
-        # MID Path selections - RTF File
+        # Add UI components for "RTF File"
         self.rtf_label = toga.Label(text="RTF File: ", style=Pack(width=label_width, margin=5))
         self.rtf_input = toga.TextInput(
             readonly=True,
@@ -78,85 +72,93 @@ class MainTab:
         )
         self.rtf_button = toga.Button(
             text="Browse",
-            on_press=self.action_open_file_dialog,
+            on_press=self._action_open_file_dialog,
             enabled=False,
             style=Pack(width=button_width, margin=5)
         )
-
         self.rtf_box = toga.Box(
             children=[self.rtf_label, self.rtf_input, self.rtf_button],
             style=Pack(direction=ROW)
         )
         self.main_tab_box.add(self.rtf_box)
 
-        # Generation mode selection
+        # Add UI components for "Mode Box"
         self.mode_label = toga.Label(text="Mode: ", style=Pack(width=label_width, margin=5))
-
         self.mode_info_label = toga.Label(
             text=app.mode_info.get("Preserve"),
             style=Pack(margin=5, flex=1)
         )
-
         self.mode_selection = SourceSelection(
             items=list(app.mode_info.keys()),
-            value="Preserve",# Set default mode 设置默认模式
+            value="Preserve",# default mode 默认模式
             on_change=self.update_mode_info_by_selection,
             style=Pack(direction=ROW, width=label_width, margin=5)
         )
-
         self.allow_duplicates = toga.Switch(
-            text="Allow Duplicates?",
+            text="Allow Duplicates",
             value=True,
             style=Pack(margin=5)
         )
-
-        # Create mode selection box with children
+        self.save_backup = toga.Switch(
+            text="Save backup of config.xml",
+            value=True,
+            style=Pack(margin=5)
+        )
         self.mode_box = toga.Box(
-            children=[self.mode_label, self.mode_selection, self.mode_info_label, self.allow_duplicates],
+            children=[self.mode_label, self.mode_selection, self.mode_info_label, self.allow_duplicates, self.save_backup],
             style=Pack(direction=ROW)
         )
         self.main_tab_box.add(self.mode_box)
 
+        # Add UI components for "Replacer Box"
         self.replace_faces_button = toga.Button(
             text="Replace Faces",
             on_press=self._replace_faces,
             enabled=False,
             style=Pack(margin=5)
         )
-
-        self.status_label = toga.Label(
-            text="",
-            style=Pack(flex=0.2, margin=5)
-        )
         self.progress_bar = toga.ProgressBar(
             max=100,
             style=Pack(flex=0.8, margin=5)
         )
-
+        self.status_label = toga.Label(
+            text="",
+            style=Pack(flex=0.2, margin=5)
+        )
         self.status_progress_box = toga.Box(
             children=[self.progress_bar, self.status_label],
             style=Pack(direction=ROW)
         )
-
-        # Create generation box with children
-        self.gen_box = toga.Box(
-            children=[self.replace_faces_button, self.status_progress_box],
+        self.replacer_box = toga.Box(
+            children=[self.replace_faces_button, self.status_progress_box,toga.Divider()],
             style=Pack(direction=COLUMN, flex=1)
         )
-        self.main_tab_box.add(self.gen_box)
+        self.main_tab_box.add(self.replacer_box)
 
     def set_btns(self, value=True):
         """
-        Set button enabled states
-        设置按钮启用状态
+        根据当前配置文件状态和输入设置来设置按钮的启用状态
+        Set button enabled states based on current profile status and input settings
+
+        此方法控制界面中三个主要按钮的启用状态:
+        1. Replace Faces 按钮 - 执行头像替换操作
+        2. Browse 按钮 (图片目录) - 选择图片目录
+        3. Browse 按钮 (RTF文件) - 选择RTF文件
+
+        按钮启用逻辑:
+        - 如果当前配置文件为 "No Profile"，则所有按钮都禁用
+        - 如果图片目录或RTF文件路径为空，则只能启用浏览按钮，禁用执行按钮
+        - 其他情况下，根据传入的value参数设置所有按钮的启用状态
 
         Args:
-            value: Button enabled state 按钮启用状态
+            value (bool): 按钮的启用状态，默认为True
+                         Button enabled state, default is True
         """
         if not all([self.replace_faces_button, self.dir_button, self.rtf_button]):
             return
 
         if self.app.profile_manager and self.app.profile_manager.cur_prf == "No Profile":
+            # 当前为"No Profile"配置文件时，禁用所有按钮
             self.replace_faces_button.enabled = False
             self.dir_button.enabled = False
             self.rtf_button.enabled = False
@@ -164,22 +166,17 @@ class MainTab:
             self.app.profile_manager.prf_cfg.get("img_dir", "") == ""
             or self.app.profile_manager.prf_cfg.get("rtf", "") == ""
         ):
+            # 当前配置文件缺少必要路径信息时，禁用执行按钮，启用浏览按钮
             self.replace_faces_button.enabled = False
             self.dir_button.enabled = value
             self.rtf_button.enabled = value
         else:
+            # 所有条件满足时，根据value参数设置所有按钮状态
             self.replace_faces_button.enabled = value
             self.dir_button.enabled = value
             self.rtf_button.enabled = value
 
     def _create_profile(self, widget):
-        """
-        Create profile (internal method)
-        创建配置文件 (内部方法)
-
-        Args:
-            widget: The widget that triggered the event 触发事件的组件
-        """
         name = self.create_input.value
         if not name or not name.strip():
             self.app.throw_error("The Profile is Null!")
@@ -192,17 +189,9 @@ class MainTab:
         self.set_btns(True)
 
     def _delete_profile(self, widget):
-        """
-        Delete profile (internal method)
-        删除配置文件 (内部方法)
-
-        Args:
-            widget: The widget that triggered the event 触发事件的组件
-        """
         prf = self.profile_list.value
         result = self.app.profile_manager.delete_profile(prf)
         if not result:
-            # 处理删除失败的情况，显示错误信息
             self.app.throw_error("Can't delete 'No Profile'")
             return
         self.profile_list.remove_item(prf)
@@ -211,19 +200,11 @@ class MainTab:
         self.set_btns(False)
 
     def _set_profile_status(self, e):
-        """
-        Set profile status (internal method)
-        设置配置文件状态 (内部方法)
-
-        Args:
-            e: Event object 事件对象
-        """
         self.app.logger.info(f"switch profile: {e.value}")
         if e.value is None:
             self.app.logger.info(f"catch none {self.app.profile_manager.cur_prf}")
         elif e.value == self.app.profile_manager.cur_prf:
             self.app.logger.info("catch same values")
-
         else:
             name = e.value
             self.app.profile_manager.load_profile(name)
@@ -241,9 +222,9 @@ class MainTab:
         else:
             self.dir_input.value = self.app.profile_manager.prf_cfg['img_dir']
             self.rtf_input.value = self.app.profile_manager.prf_cfg['rtf']
-        self.app.logger.debug(f"Refresh InputText. Dir_input: {self.dir_input.value}, Rtf_input: {self.dir_input.value}")
+        self.app.logger.debug(f"Refresh InputText. Dir_input: {self.dir_input.value}, Rtf_input: {self.rtf_input.value}")
 
-    async def action_select_folder_dialog(self, widget):
+    async def _action_select_folder_dialog(self, widget):
         """
         Action for select folder dialog (async method)
         选择文件夹对话框操作 (异步方法)
@@ -251,13 +232,12 @@ class MainTab:
         Args:
             widget: The widget that triggered the event 触发事件的组件
         """
-        self.app.logger.info("Select Folder...")
+        self.app.logger.info("Select images folder...")
         try:
             dialog = toga.SelectFolderDialog(title="Select image root folder")
             path_name = await self.app.main_window.dialog(dialog)
             if path_name:
                 path_name = str(path_name)
-                self.app.logger.info(path_name)
                 self.dir_input.value = path_name + "/"
                 self.app.profile_manager.prf_cfg["img_dir"] = path_name + "/"
                 self.app.profile_manager.config_manager.save_config(
@@ -270,7 +250,7 @@ class MainTab:
             self.app.logger.error("Fatal error in main loop", exc_info=True)
             pass
 
-    async def action_open_file_dialog(self, widget):
+    async def _action_open_file_dialog(self, widget):
         """
         Action for open file dialog (async method)
         打开文件对话框操作 (异步方法)
@@ -278,7 +258,7 @@ class MainTab:
         Args:
             widget: The widget that triggered the event 触发事件的组件
         """
-        self.app.logger.info("Select File...")
+        self.app.logger.info("Select RTF file...")
         try:
             dialog = toga.OpenFileDialog(title="Open RTF file", multiple_select=False, file_types=["rtf"])
             fname = await self.app.main_window.dialog(dialog)
@@ -319,7 +299,7 @@ class MainTab:
             self.app.logger.error(f"RTF file doesn't exist: {rtf_path}")
             await self.app.throw_error("The RTF file doesn't exist!")
             self.app.profile_manager.prf_cfg['rtf'] = ''
-            self.set_btns(False)
+            self.set_btns()
             return False
         return True
 
@@ -334,8 +314,8 @@ class MainTab:
         if not os.path.isdir(img_dir):
             await self.app.throw_error("The image directory doesn't exist!")
             self.app.profile_manager.prf_cfg['img_dir'] = ''
+            self.set_btns()
             return False
-
         # Check if valid image_directory contains all the needed subfolders
         # 检查有效的图像目录是否包含所有需要的子文件夹
         img_dirs = set()
@@ -350,7 +330,6 @@ class MainTab:
                 dialog = toga.QuestionDialog("Missing Directory", f"Folder '{fp_dir}' is missing in the image directory. Do you want to create it and continue?")
                 user_choose = await self.app.main_window.dialog(dialog)
                 if user_choose:
-                    self.app.logger.info(f"Creating directory: {fp_dir}")
                     try:
                         os.makedirs(os.path.join(img_dir, fp_dir), exist_ok=True)
                         self.app.logger.info(f"Created directory: {fp_dir}")
@@ -374,7 +353,7 @@ class MainTab:
         Args:
             widget: The widget that triggered the event 触发事件的组件
         """
-        self.app.logger.info("Start Replace Faces")    
+        self.app.logger.info("Start Replace Faces")
         self.progress_bar.value = 0
         self.status_label.text = ''
         rtf = self.app.profile_manager.prf_cfg['rtf']
@@ -392,10 +371,10 @@ class MainTab:
             self.progress_bar.stop()
             return
         
-        self.app.logger.info("rtf: {}".format(rtf))
-        self.app.logger.info("img_dir: {}".format(img_dir))
-        self.app.logger.info("profile: {}".format(profile))
-        self.app.logger.info("mode: {}".format(mode))
+        self.app.logger.info(f"rtf: {rtf}")
+        self.app.logger.info(f"img_dir: {img_dir}")
+        self.app.logger.info(f"profile: {profile}")
+        self.app.logger.info(f"mode: {mode}")
         self.set_btns(False)
         self.progress_bar.start()
         self.status_label.text = "Parsing RTF"
@@ -409,12 +388,12 @@ class MainTab:
         self.progress_bar.value += 20
         self.status_label.text = "Map player to ethnicity"
         await asyncio.sleep(0.1)
-        mapping_data = Mapper(img_dir, self.app.profile_manager).generate_mapping(rtf_data, mode, self.allow_duplicates)
+        mapping_data = FaceMapper(img_dir, self.app.profile_manager).generate_mapping(rtf_data, mode, self.allow_duplicates.value)
         self.progress_bar.value += 60
         self.status_label.text = "Generate config.xml"
         await asyncio.sleep(0.1)
         try:
-            self.app.profile_manager.write_xml(mapping_data)
+            self.app.profile_manager.write_xml(mapping_data, self.save_backup.value)
         except FileNotFoundError as e:
             self.app.logger.error(f"Configuration template file not found: {e}")
             await self.app.throw_error(f"Configuration template file not found: {e}")
@@ -430,8 +409,8 @@ class MainTab:
             await self.app.throw_error(f"Unexpected error while writing XML: {e}")
             self.progress_bar.stop()
             return
-        # save profile metadata (used pics and config.xml)
-        # 保存配置文件元数据（使用的图片和config.xml）
+        # save profile metadata
+        # 保存配置文件元数据
         self.status_label.text = "Save metadata for profile"
         self.progress_bar.value += 10
         await asyncio.sleep(0.1)
@@ -442,7 +421,6 @@ class MainTab:
         self.progress_bar.value += 10
         await asyncio.sleep(0.1)
         self.status_label.text = "Finished! :)"
-        await asyncio.sleep(0.1)
         await self.app.show_info("Finished! :)")
         self.progress_bar.stop()
         self.set_btns(True)

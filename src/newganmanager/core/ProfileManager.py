@@ -3,6 +3,7 @@ import os
 import logging
 from shutil import copyfileobj
 import shutil
+from datetime import datetime
 
 
 class ProfileManager(ConfigManager):
@@ -142,17 +143,26 @@ class ProfileManager(ConfigManager):
         # 更新当前配置文件名称
         self.cur_prf = name
 
-    def write_xml(self, data):
+    def write_xml(self, data, save_backup=True):
         """
-        Write XML configuration file with player mappings   写入包含球员映射的XML配置文件
+        Write XML configuration file with player mappings
 
         Args:
-            data (list): List of player mapping data    球员映射数据列表
+            data (list): List of player mapping data
+            save_backup (bool): Whether to backup the original config.xml before writing
 
         Returns:
-            list: List of XML strings that were written 已写入的XML字符串列表
+            list: List of XML strings that were written
         """
         try:
+            # Backup original config.xml if needed
+            if save_backup:
+                config_path = os.path.join(self.prf_cfg["img_dir"], "config.xml")
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                backup_path = os.path.join(self.prf_cfg["img_dir"], f"config备份_{timestamp}.xml")
+                if os.path.isfile(config_path):
+                    shutil.copy2(config_path, backup_path)
+            
             template_path = os.path.join(self.root_dir, ".config", "config_template")
             with open(template_path, "r", encoding="UTF-8") as fp:
                 config_template = fp.read()
@@ -215,16 +225,4 @@ class ProfileManager(ConfigManager):
                 )
 
     def get_ethnic(self, nation):
-        """
-        Get ethnic group for a given nation
-        获取指定国家对应的民族组
-
-        Args:
-            nation (str): Nation code to look up
-                          要查询的国家代码
-
-        Returns:
-            str or None: Ethnic group name or None if not found
-                      民族组名称，如果未找到则返回None
-        """
         return self.eth_cfg["Ethnics"].get(nation, None)
