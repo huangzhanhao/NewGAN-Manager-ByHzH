@@ -1,25 +1,18 @@
-"""
-NewGAN Replacement Management Tool - 重构版
-"""
-
-# import asyncio
-
 import toga
 from toga.style import Pack
-from travertino.constants import COLUMN, ROW
 import os
-import logging
 import shutil
-from .core.ConfigManager import ConfigManager
-from .core.ProfileManager import ProfileManager
-from .core.FaceMapper import FaceMapper
-from .core.RtfParser import RtfParser
-from .core.Reporter import Reporter
-from .core.XmlParser import XmlParser
-from .app_log_tab import LogTab
-from .app_main_tab import MainTab
+import logging
 import webbrowser
 import requests
+from .core.ConfigManager import ConfigManager
+from .core.ProfileManager import ProfileManager
+# from .core.FaceMapper import FaceMapper
+# from .core.RtfParser import RtfParser
+# from .core.XmlParser import XmlParser
+from .app_log_tab import LogTab
+from .app_main_tab import MainTab
+from .core.LogManager import NewGanLogManager
 
 
 def main():
@@ -35,6 +28,7 @@ class NewGANManager(toga.App):
             home_page="https://github.com/huangzhanhao/NewGAN-Manager-ByHzH",
         )
 
+        self.log_manager = NewGanLogManager(self.paths.app)
         self.logger = logging.getLogger("NewGAN App")
         # Initialize instance attributes with type annotations
         # 使用类型注解初始化实例属性
@@ -117,6 +111,10 @@ class NewGANManager(toga.App):
         # 启用按钮并完成启动
         self.main_tab.set_btns(True)
 
+        # Log application startup information
+        # 记录应用启动信息
+        self.logger.info("Starting Application\n-----------------------------------------")
+        self.logger.info(f"Application Path: {str(self.paths.app)}")
     def _setup_application_data(self):
         """
         Setup application directories and configuration files
@@ -141,10 +139,8 @@ class NewGANManager(toga.App):
                 ConfigManager().get_latest_prf(user_config_path), app_path
             )
             self.profile_manager.migrate_config()
-            # Store reference to config manager for backward compatibility
-            self.profile_manager.config_manager = ConfigManager()
         except Exception as e:
-            self.logger.error("Failed to setup application data: {}".format(e))
+            self.logger.error(f"Failed to setup application data: {e}")
 
     def _setup_menu(self):
         """
@@ -200,13 +196,13 @@ class NewGANManager(toga.App):
         self.commands.add(usage, troubleshooting, discord, faq)
 
     async def throw_error(self, msg):
-        self.logger.debug("Error window: {}".format(msg))
-        dialog = toga.ErrorDialog("Error",msg)
+        self.logger.debug(f"Error window: {msg}")
+        dialog = toga.ErrorDialog("Error", msg)
         if self.main_window is not None:
             await self.main_window.dialog(dialog)
 
     async def show_info(self, msg):
-        self.logger.info("Info window: {}".format(msg))
+        self.logger.info(f"Info window: {msg}")
         dialog = toga.InfoDialog("Info", msg)
         if self.main_window is not None:
             await self.main_window.dialog(dialog)
@@ -229,10 +225,10 @@ class NewGANManager(toga.App):
             self.logger.info("check update timeout exceeded!")
             return
         except requests.exceptions.RequestException as e:
-            self.logger.info("check update request failed: {}".format(e))
+            self.logger.info(f"check update request failed: {e}")
             return
         except Exception as e:
-            self.logger.info("check update unexpected error: {}".format(e))
+            self.logger.info(f"check update unexpected error: {e}")
             return
         try:
             if r.text.strip() != self.version:
