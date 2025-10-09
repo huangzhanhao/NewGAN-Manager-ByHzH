@@ -1,4 +1,4 @@
-from dhooks import Webhook, Embed, File
+from dhooks import Embed, File, Webhook
 from .XmlParser import XmlParser
 
 

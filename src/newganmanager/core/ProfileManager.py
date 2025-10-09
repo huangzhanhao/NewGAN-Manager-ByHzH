@@ -1,52 +1,22 @@
-from .ConfigManager import ConfigManager
 import os
 import logging
-from shutil import copyfileobj
 import shutil
+from shutil import copyfileobj
 from datetime import datetime
+from .ConfigManager import ConfigManager
 
 
 class ProfileManager(ConfigManager):
     def __init__(self, name, root_dir):
-        """
-        Initialize the Profile Manager  初始化配置文件管理器
-
-        Args:
-            name (str): Profile name to load initially  要初始加载的配置文件名
-            root_dir (str): Root directory of the application   应用程序的根目录
-        """
         super().__init__()
-        # Load user configuration file  加载用户配置文件
-        self.config = self.load_config(root_dir + "/.user/cfg.json")
-        # Load profile-specific configuration file  加载特定的配置文件
-        self.prf_cfg = self.load_config(root_dir + "/.user/" + name + ".json")
-        # Load ethnic configuration file  加载民族配置文件
-        self.eth_cfg = self.load_config(root_dir + "/.config/eth_cfg.json")
-        # Set current profile name  设置当前配置文件名
-        self.cur_prf = name
-        # Set application root directory  设置应用程序根目录
-        self.root_dir = root_dir
-
+        self.config = self.load_config(root_dir + "/.user/cfg.json")  # Load user configuration file  加载用户配置文件
+        self.prf_cfg = self.load_config(root_dir + "/.user/" + name + ".json")  # Load profile-specific configuration file  加载特定的配置文件
+        self.eth_cfg = self.load_config(root_dir + "/.config/eth_cfg.json")  # Load ethnic configuration file  加载民族配置文件
+        self.cur_prf = name  # Set current profile name  设置当前配置文件名
+        self.root_dir = root_dir  # Set root directory  设置根目录
         self.logger = logging.getLogger("NewGAN App")
 
-        self.config_manager = ConfigManager()
-
     def migrate_config(self):
-        """
-        Migrate configuration files from old format to new format
-
-        This method checks for old configuration files in the legacy "../.config/" directory,
-        and migrates them to the new structure in the ".user/" and ".config/" directories.
-        It handles profile data, XML files, and JSON configuration files.
-
-        The migration process:
-        1. Checks if old config file exists
-        2. Extracts profile information
-        3. Saves profile data to new location
-        4. Updates old config file
-        5. Moves XML and JSON profile files
-        6. Removes old config directory
-        """
         if os.path.isfile("../.config/eth_cfg.json"):
             old_cfg = self.load_config("../.config/eth_cfg.json")
             if "Profile" in old_cfg:
@@ -69,42 +39,29 @@ class ProfileManager(ConfigManager):
                 shutil.rmtree("../.config/")
 
     def delete_profile(self, name):
-        """
-        Delete a profile by name    根据名称删除配置文件
-
-        Args:
-            name (str): Name of the profile to delete   要删除的配置文件名
-
-        Returns:
-            bool: True if deletion was successful, False otherwise  如果删除成功则返回True，否则返回False
-        """
-        # self.logger.info("Delete profile: {}".format(name))
         if name == "No Profile":
-            # self.logger.info("Can't delete no profile")
+            self.logger.warning("Can't delete no profile")
             return False
+        # 删除配置文件
         del self.config["Profile"][name]
-        try:
-            os.remove(self.prf_cfg["img_dir"] + "config.xml")
-        except OSError:
-            pass
+        # try:
+        #     os.remove(self.prf_cfg['img_dir']+"config.xml")
+        # except OSError:
+        #     self.logger.error(f"Error deleting config.xml, path: {self.prf_cfg['img_dir']+'config.xml'}")
+        #     pass
         try:
             os.remove(self.root_dir + "/.user/" + name + ".json")
             os.remove(self.root_dir + "/.user/" + name + ".xml")
-        except OSError:
+        except OSError as e:
+            self.logger.error(f"Error deleting profile files: {e}")
             pass
-        self.save_config(self.root_dir + "/.user/eth_cfg.json", self.config)
+        self.save_config(self.root_dir + "/.user/cfg.json", self.config)
         self.load_profile("No Profile")
+        self.logger.info(f"Delete profile: {name}")
         return True
 
     def create_profile(self, name):
-        """
-        Create a new profile with the given name    创建一个具有给定名称的新配置文件
-
-        Args:
-            name (str): Name of the profile to create   要创建的配置文件名
-        """
-        # self.logger.info("Create new profile: {}".format(name))
-        self.config["Profile"][name] = False
+        self.config["Profile"][name] = True
         self.save_config(self.root_dir + "/.user/cfg.json", self.config)
         self.save_config(
             self.root_dir + "/.user/" + name + ".json",
@@ -112,18 +69,13 @@ class ProfileManager(ConfigManager):
         )
         try:
             with open(self.root_dir + "/.user/" + name + ".xml", "a"):
-                pass
+                self.load_profile(name)
+                self.logger.info(f"Create new profile: {name}")
         except OSError:
+            self.logger.error(f"Error creating profile file for: {name}")
             pass
-        self.load_profile(name)
 
     def load_profile(self, name):
-        """
-        Load a profile by name and update active profile    加载指定名称的配置文件并更新当前活动配置文件
-
-        Args:
-            name (str): Name of the profile to load         要加载的配置文件名
-        """
         # 获取当前配置文件的图像目录，用于后续保存配置文件
         deact_img_dir = self.prf_cfg["img_dir"]
         # 加载新配置文件的配置信息
@@ -145,7 +97,7 @@ class ProfileManager(ConfigManager):
 
     def write_xml(self, data, save_backup=True):
         """
-        Write XML configuration file with player mappings
+        Write config.xml file with player mappings
 
         Args:
             data (list): List of player mapping data
@@ -162,7 +114,15 @@ class ProfileManager(ConfigManager):
                 backup_path = os.path.join(self.prf_cfg["img_dir"], f"config备份_{timestamp}.xml")
                 if os.path.isfile(config_path):
                     shutil.copy2(config_path, backup_path)
-            
+                    # 最多保存10个备份文件，如果超过则删除最旧的备份
+                    import glob
+                    backup_pattern = os.path.join(self.prf_cfg["img_dir"], "config备份_*.xml")
+                    backup_files = glob.glob(backup_pattern)
+                    if len(backup_files) > 10:
+                        backup_files.sort()
+                        files_to_remove = len(backup_files) - 10
+                        for i in range(files_to_remove):
+                            os.remove(backup_files[i])
             template_path = os.path.join(self.root_dir, ".config", "config_template")
             with open(template_path, "r", encoding="UTF-8") as fp:
                 config_template = fp.read()
@@ -173,14 +133,14 @@ class ProfileManager(ConfigManager):
                         dat[1] + "/" + dat[2], dat[0]
                     )
                 )
-            xml_players = "\n".join(xml_string)
+            xml_players = "\n                ".join(xml_string)
             xml_config = config_template.replace("[players]", xml_players)
             config_path = os.path.join(self.prf_cfg["img_dir"], "config.xml")
             with open(config_path, "w", encoding="UTF-8") as fp:
                 fp.write(xml_config)
             return xml_string
         except FileNotFoundError as e:
-            raise FileNotFoundError(f"Configuration template file not found: {e}")
+            raise FileNotFoundError(f"Config.xml template file not found: {e}")
         except PermissionError as e:
             raise PermissionError(f"Permission denied when accessing files: {e}")
         except Exception as e:
@@ -197,32 +157,13 @@ class ProfileManager(ConfigManager):
             deact_img_dir (str): Image directory of deactivated profile     停用配置文件的图像目录
             act_img_dir (str): Image directory of activated profile         激活配置文件的图像目录
         """
-        # 保存当前停用配置文件的config.xml
-        deact_config_path = deact_img_dir + "config.xml"
-        deact_user_path = self.root_dir + "/.user/" + deact_name + ".xml"
-        if os.path.isfile(deact_config_path):
-            try:
-                with open(deact_user_path, "wb") as output, open(
-                    deact_config_path, "rb"
-                ) as input:
-                    copyfileobj(input, output)
-            except (OSError, IOError) as e:
-                raise Exception(
-                    f"Failed to save deactivated profile config from {deact_config_path} to {deact_user_path}: {str(e)}"
-                )
-        # 恢复目标激活配置文件的config.xml
-        act_config_path = act_img_dir + "config.xml"
-        act_user_path = self.root_dir + "/.user/" + act_name + ".xml"
-        if os.path.isfile(act_config_path):
-            try:
-                with open(act_config_path, "wb") as output, open(
-                    act_user_path, "rb"
-                ) as input:
-                    copyfileobj(input, output)
-            except (OSError, IOError) as e:
-                raise Exception(
-                    f"Failed to restore activated profile config from {act_user_path} to {act_config_path}: {str(e)}"
-                )
+        if os.path.isfile(deact_img_dir+"config.xml"):
+            with open(self.root_dir+'/.user/'+deact_name+'.xml', 'wb') as output, open(deact_img_dir+'config.xml', 'rb') as input:
+                copyfileobj(input, output)
+
+        if os.path.isfile(act_img_dir+"config.xml"):
+            with open(act_img_dir+'config.xml', 'wb') as output, open(self.root_dir+'/.user/'+act_name+'.xml', 'rb') as input:
+                copyfileobj(input, output)
 
     def get_ethnic(self, nation):
         return self.eth_cfg["Ethnics"].get(nation, None)
