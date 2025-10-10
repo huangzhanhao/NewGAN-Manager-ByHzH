@@ -76,11 +76,8 @@ class ProfileManager(ConfigManager):
             pass
 
     def load_profile(self, name):
-        # 获取当前配置文件的图像目录，用于后续保存配置文件
         deact_img_dir = self.prf_cfg["img_dir"]
-        # 加载新配置文件的配置信息
         self.prf_cfg = self.load_config(self.root_dir + "/.user/" + name + ".json")
-        # 获取新配置文件的图像目录，用于后续加载配置文件
         act_img_dir = self.prf_cfg["img_dir"]
         # 交换当前配置文件和新配置文件的XML配置
         self.swap_xml(self.cur_prf, name, deact_img_dir, act_img_dir)
@@ -92,24 +89,22 @@ class ProfileManager(ConfigManager):
             else:
                 # 将其他配置文件设为非激活状态
                 self.config["Profile"][key] = False
-        # 更新当前配置文件名称
         self.cur_prf = name
 
     def write_xml(self, data, save_backup=True):
         """
         Write config.xml file with player mappings
-
         Args:
             data (list): List of player mapping data
             save_backup (bool): Whether to backup the original config.xml before writing
-
         Returns:
             list: List of XML strings that were written
         """
+        config_path = os.path.join(self.prf_cfg["img_dir"], "config.xml")
+        template_path = os.path.join(self.root_dir, ".config", "config_template")
         try:
             # Backup original config.xml if needed
             if save_backup:
-                config_path = os.path.join(self.prf_cfg["img_dir"], "config.xml")
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
                 backup_path = os.path.join(self.prf_cfg["img_dir"], f"config备份_{timestamp}.xml")
                 if os.path.isfile(config_path):
@@ -123,7 +118,6 @@ class ProfileManager(ConfigManager):
                         files_to_remove = len(backup_files) - 10
                         for i in range(files_to_remove):
                             os.remove(backup_files[i])
-            template_path = os.path.join(self.root_dir, ".config", "config_template")
             with open(template_path, "r", encoding="UTF-8") as fp:
                 config_template = fp.read()
                 xml_string = []
@@ -139,31 +133,37 @@ class ProfileManager(ConfigManager):
             with open(config_path, "w", encoding="UTF-8") as fp:
                 fp.write(xml_config)
             return xml_string
-        except FileNotFoundError as e:
-            raise FileNotFoundError(f"Config.xml template file not found: {e}")
+        except FileNotFoundError:
+            self.logger.error(f"Config_template file not found: {template_path}")
+            raise
         except PermissionError as e:
-            raise PermissionError(f"Permission denied when accessing files: {e}")
+            self.logger.error(f"Permission denied when accessing config.xml file: {e}")
+            raise
+        except OSError as e:
+            self.logger.error(f"OS error occurred while writing config.xml file: {e}")
+            raise
         except Exception as e:
-            raise Exception(f"Unexpected error while writing XML: {e}")
+            self.logger.error(f"Unexpected error while writing config.xml file: {e}")
+            raise
 
     def swap_xml(self, deact_name, act_name, deact_img_dir, act_img_dir):
         """
-        Swap XML files between deactivated and activated profiles
-        在停用和激活的配置文件之间交换XML文件
-
+        Swap XML files between deactivated and activated profiles           在停用和激活的配置文件之间交换XML文件
         Args:
             deact_name (str): Name of the profile being deactivated         要停用的配置文件名
             act_name (str): Name of the profile being activated             要激活的配置文件名
             deact_img_dir (str): Image directory of deactivated profile     停用配置文件的图像目录
             act_img_dir (str): Image directory of activated profile         激活配置文件的图像目录
         """
-        if os.path.isfile(deact_img_dir+"config.xml"):
-            with open(self.root_dir+'/.user/'+deact_name+'.xml', 'wb') as output, open(deact_img_dir+'config.xml', 'rb') as input:
-                copyfileobj(input, output)
-
-        if os.path.isfile(act_img_dir+"config.xml"):
-            with open(act_img_dir+'config.xml', 'wb') as output, open(self.root_dir+'/.user/'+act_name+'.xml', 'rb') as input:
-                copyfileobj(input, output)
+        try:
+            if os.path.isfile(deact_img_dir+"config.xml"):
+                with open(self.root_dir+'/.user/'+deact_name+'.xml', 'wb') as output, open(deact_img_dir+'config.xml', 'rb') as input:
+                    copyfileobj(input, output)
+            if os.path.isfile(act_img_dir+"config.xml"):
+                with open(act_img_dir+'config.xml', 'wb') as output, open(self.root_dir+'/.user/'+act_name+'.xml', 'rb') as input:
+                    copyfileobj(input, output)
+        except (IOError, OSError) as e:
+            self.logger.error(f"Error swapping XML files: {e}")
 
     def get_ethnic(self, nation):
         return self.eth_cfg["Ethnics"].get(nation, None)

@@ -18,6 +18,8 @@ class MainTab:
         # Create UI sections with specified label width
         label_width = 110
         button_width = 70
+        self.rtf_data = []
+        self.mapping_data = []
 
         # Add UI components for "Create Profile"
         create_label = toga.Label(text="Create Profile: ", style=Pack(width=label_width, margin=5))
@@ -99,8 +101,8 @@ class MainTab:
             value=True,
             style=Pack(margin=5)
         )
-        self.filter_NewGAN = toga.Switch(
-            text="Filter NewGAN players",
+        self.isNewGAN = toga.Switch(
+            text="only for NewGAN players",
             value=True,
             style=Pack(margin=5)
         )
@@ -110,7 +112,7 @@ class MainTab:
             style=Pack(margin=5)
         )
         mode_box = toga.Box(
-            children=[mode_label, self.mode_selection, self.mode_info_label, self.allow_duplicates, self.filter_NewGAN, self.save_backup],
+            children=[mode_label, self.mode_selection, self.mode_info_label, self.allow_duplicates, self.isNewGAN, self.save_backup],
             style=Pack(direction=ROW)
         )
         self.main_tab_box.add(mode_box)
@@ -124,7 +126,7 @@ class MainTab:
         )
         self.cancel_button = toga.Button(
             text="Cancel",
-            on_press=None,  # To be implemented
+            on_press=self._cancel_replace_faces,
             enabled=False,
             style=Pack(visibility="hidden", flex=0.2, margin=5)
         )
@@ -392,11 +394,13 @@ class MainTab:
 
     async def _replace_faces(self, widget):
         self.logger.info("Start Replace Faces")
+        # 初始化UI状态
         self.cancel_button.enabled = True
-        # self.cancel_button.style=Pack(visibility="visible", flex=0.2, margin=5)
         self.cancel_button.style.update(visibility="visible")
         self.progress_bar.value = 0
         self.status_label.text = ''
+        self.set_btns(False)
+        # 获取配置参数
         rtf = self.app.profile_manager.prf_cfg['rtf']
         img_dir = self.app.profile_manager.prf_cfg['img_dir']
         profile = self.app.profile_manager.cur_prf
@@ -405,87 +409,134 @@ class MainTab:
         self.logger.info(f"img_dir: {img_dir}")
         self.logger.info(f"profile: {profile}")
         self.logger.info(f"mode: {mode}")
-        self.set_btns(False)
-
-        self.progress_bar.start()
-        self.status_label.text = "Parsing RTF file..."
-        await asyncio.sleep(0.1)
-        rtf_parser = RtfParser()
-        # Validate RTF file
-        if not await self._validate_rtf_file(rtf, rtf_parser):
-            self.app.profile_manager.prf_cfg['rtf'] = ''
-            self.rtf_input.value = ''
-            self.set_btns()
-            self.progress_bar.stop()
-            return
-        # Validate image directory
-        if not await self._validate_image_directory(img_dir):
-            self.progress_bar.stop()
-            return
-        self.progress_bar.value += 10
-        try:
-            self.rtf_data = rtf_parser.parse_rtf(rtf, self.filter_NewGAN.value)
-        except FileNotFoundError as e:
-            self.logger.error(f"RTF file not found: {e}")
-            await self.app.throw_error(f"RTF file not found: {e}")
-            self.progress_bar.stop()
-            return
-        except UnicodeDecodeError as e:
-            self.logger.error(f"Error decoding RTF file: {e}")
-            await self.app.throw_error(f"Error decoding RTF file: {e}")
-            self.progress_bar.stop()
-            return
-        except ValueError as e:
-            self.logger.error(f"Error parsing RTF file: {e}")
-            await self.app.throw_error(f"Error parsing RTF file: {e}")
-            self.progress_bar.stop()
-            return
-        except Exception as e:
-            self.logger.error(f"Error parsing RTF file: {e}")
-            await self.app.throw_error(f"Error parsing RTF file: {e}")
-            self.progress_bar.stop()
-            return
-        self.progress_bar.value += 20
-        self.status_label.text = "Mapping player to image..."
-        await asyncio.sleep(0.1)
-        self.mapping_data = FaceMapper(img_dir, self.app.profile_manager).generate_mapping(self.rtf_data, mode, self.allow_duplicates.value)
-        self.progress_bar.value += 60
-        self.status_label.text = "Generating config.xml..."
-        await asyncio.sleep(0.1)
-        try:
-            self.app.profile_manager.write_xml(self.mapping_data, self.save_backup.value)
-        except FileNotFoundError as e:
-            self.logger.error(f"Configuration template file not found: {e}")
-            await self.app.throw_error(f"Configuration template file not found: {e}")
-            self.progress_bar.stop()
-            return
-        except PermissionError as e:
-            self.logger.error(f"Permission denied when accessing files: {e}")
-            await self.app.throw_error(f"Permission denied when accessing files: {e}")
-            self.progress_bar.stop()
-            return
-        except Exception as e:
-            self.logger.error(f"Unexpected error while writing XML: {e}")
-            await self.app.throw_error(f"Unexpected error while writing XML: {e}")
-            self.progress_bar.stop()
-            return
-        # save profile metadata
-        # 保存配置文件元数据
-        self.status_label.text = "Save metadata for profile"
-        self.progress_bar.value += 10
-        await asyncio.sleep(0.1)
-        self.app.profile_manager.save_config(
-            str(self.app.paths.app)+"/.user/"+profile+".json", 
-            self.app.profile_manager.prf_cfg
+        # 创建并启动主任务
+        self._replace_task = asyncio.create_task(
+            self._execute_replace_faces(rtf, img_dir, profile, mode),
+            name="replace_faces_task"
         )
-        self.progress_bar.value += 10
-        await asyncio.sleep(0.1)
-        self.status_label.text = "Finished! :)"
-        await self.app.show_info("Finished! :)")
-        self.progress_bar.stop()
+        try:
+            # 等待任务完成
+            await self._replace_task
+        except asyncio.CancelledError:
+            self.logger.info("Replace faces task was cancelled")
+            self.status_label.text = "Cancelled"
+        except Exception as e:
+            self.logger.error(f"Error in replace faces task: {e}")
+            await self.app.throw_error(f"Error during face replacement: {e}")
+        finally:
+            # 清理任务引用
+            self._replace_task = None
+            self._cleanup_after_replace()
+
+    async def _execute_replace_faces(self, rtf, img_dir, profile, mode):
+        """执行头像替换的核心逻辑"""
+        try:
+            # 步骤1: 验证RTF文件
+            await self._update_progress("Validating RTF file...", 0)
+            rtf_parser = RtfParser()
+            if not await self._validate_rtf_file(rtf, rtf_parser):
+                self.app.profile_manager.prf_cfg['rtf'] = ''
+                self.rtf_input.value = ''
+                return
+            # 步骤2: 验证图片目录
+            await self._update_progress("Validating image directory...", 10)
+            if not await self._validate_image_directory(img_dir):
+                return
+            # 步骤3: 解析RTF文件
+            await self._update_progress("Parsing RTF file...", 20)
+            self.rtf_data = await self._parse_rtf_file(rtf, rtf_parser)
+            if self.rtf_data is None:
+                return
+            # 步骤4: 生成映射数据
+            await self._update_progress("Mapping player to image...", 40)
+            self.mapping_data = await self._generate_mapping_data(img_dir, self.rtf_data, mode)
+            if self.mapping_data is None:
+                return
+            # 步骤5: 生成config.xml文件
+            await self._update_progress("Generating config.xml...", 80)
+            if not await self._generate_config_xml(self.mapping_data):
+                return
+            # 步骤6: 保存元数据
+            await self._update_progress("Saving profile metadata...", 90)
+            await self._save_profile_metadata(profile)
+            # 完成
+            await self._update_progress("Finished! :)", 100)
+            await asyncio.sleep(1)
+            await self.app.show_info("Finished! :)")
+        except Exception as e:
+            self.logger.error(f"Error in execute_replace_faces: {e}")
+            raise
+
+    def _cleanup_after_replace(self):
+        """清理替换任务完成后的UI状态"""
         self.cancel_button.enabled = False
         self.cancel_button.style.update(visibility="hidden")
         self.set_btns(True)
+        self.progress_bar.stop()
+    async def _update_progress(self, status, value):
+        """更新进度条和状态标签的辅助方法"""
+        self.status_label.text = status
+        self.progress_bar.value = value
+        # 让出控制权，确保UI更新
+        await asyncio.sleep(0.01)
+
+    async def _parse_rtf_file(self, rtf_path, rtf_parser):
+        """解析RTF文件"""
+        try:
+            return rtf_parser.parse_rtf(rtf_path, self.isNewGAN.value)
+        except FileNotFoundError:
+            await self.app.throw_error("RTF file not found")
+        except UnicodeDecodeError:
+            await self.app.throw_error("Encoding error in RTF file")
+        except Exception as e:
+            await self.app.throw_error(f"Error parsing RTF file: {e}")
+        return None
+
+    async def _generate_mapping_data(self, img_dir, rtf_data, mode):
+        """生成映射数据"""
+        try:
+            return FaceMapper(img_dir, self.app.profile_manager).generate_mapping(
+                rtf_data, mode, self.allow_duplicates.value
+            )
+        except Exception as e:
+            self.logger.error(f"Error mapping player to image: {e}")
+            await self.app.throw_error(f"Error mapping player to image: {e}")
+            return None
+
+    async def _generate_config_xml(self, mapping_data):
+        """生成配置文件"""
+        try:
+            self.app.profile_manager.write_xml(mapping_data, self.save_backup.value)
+            return True
+        except FileNotFoundError:
+            await self.app.throw_error("Config_template file not found")
+        except Exception as e:
+            await self.app.throw_error(f"Error while writing XML: {e}")
+        return False
+
+    async def _save_profile_metadata(self, profile):
+        """保存配置文件元数据"""
+        try:
+            self.app.profile_manager.save_config(
+                str(self.app.paths.app) + "/.user/" + profile + ".json",
+                self.app.profile_manager.prf_cfg
+            )
+            return True
+        except Exception as e:
+            self.logger.error(f"Error saving profile metadata: {e}")
+            await self.app.throw_error(f"Error saving profile: {e}")
+            return False
+
+    async def _cancel_replace_faces(self, widget):
+        """取消正在进行的替换任务"""
+        if hasattr(self, '_replace_task') and self._replace_task:
+            self._replace_task.cancel()
+            try:
+                await self._replace_task
+            except asyncio.CancelledError:
+                self.logger.info("Replace faces task cancelled successfully")
+            self._replace_task = None
+            self._cleanup_after_replace()
 
     def _on_preview_uid_confirm(self, widget, **kwargs):
         uid = self.uid_info.value.strip()
@@ -511,7 +562,7 @@ class MainTab:
                                 self.rep_img.image = toga.Image("resources/apple-touch-icon.png")
             else:
                 self.logger.warning("No mapping data available for previewing player details")
-                self.img_path.text = "Image Path: no found"
+                self.img_path.text = "Image Path: ...\\..."
                 self.rep_img.image = toga.Image("resources/apple-touch-icon.png")
             # Then get player details from rtf_data
             if hasattr(self, 'rtf_data') and self.rtf_data:
