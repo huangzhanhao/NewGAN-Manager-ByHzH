@@ -37,42 +37,36 @@ class RtfParser:
     def parse_rtf(self, path, filter_newgan=True):
         """
         解析RTF文件，提取球员数据
-        字段顺序：UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 种族代码
-
+        字段顺序：UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码
         Args:
             path (str): RTF文件的路径
-
+            filter_newgan (bool): 是否过滤掉非NewGAN球员，默认为True
         Returns:
             list: 包含球员信息的列表，每个球员信息是一个包含以下元素的列表：
-                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 种族代码] 或
-                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 种族代码, 肤色代码, 面部, 俱乐部, 年龄, 身高, 体重, 是否为随机人]
+                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码] 或
+                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码, 新版肤色代码, 面部, 俱乐部, 年龄, 身高, 体重, 是否为随机人]
         """
-        # 验证RTF文件格式
+        # 首先验证RTF文件格式
         if not self.is_rtf_valid:
             self.logger.error("Parsing RTF file... The RTF file format is invalid, please check the RTF file first.")
             return []
-        
         # 重置数据
         self.rtf_data = []
-        
         try:
             line_count = 0
             with open(path, "r", encoding="UTF-8") as rtf:
                 self.logger.info(f"Parsing RTF file...")
                 for line in rtf:
                     line_count += 1
-                    
                     # 跳过空行
                     if not line.strip():
                         continue
-                    
                     # 使用正则匹配有效数据行
                     if self.rtf_regex.search(line) or self.rtf_regex_chn.search(line):
                         # 分割字段并去除空白，但保留空值字段
                         fields = [f.strip() for f in line.split("|")]
                         # 移除第一个和最后一个空字段（来自行首行尾的分隔符）
                         fields = fields[1:-1] if len(fields) >= 2 else []
-                        
                         # 验证字段数量
                         if len(fields) < 7:
                             self.logger.warning(f"Parsing RTF file {line_count} line: contains only {len(fields)} fields but less than 7 fields - skipping")
@@ -86,7 +80,6 @@ class RtfParser:
                             hair_length = fields[4]
                             hair_color = fields[5]
                             ethnicity_code = fields[6]
-
                         # 验证UID
                         if not uid.isdigit():
                             self.logger.info(f"Parsing RTF file {line_count} line: the uid field({uid}) is invalid - skipping")
@@ -94,12 +87,10 @@ class RtfParser:
                         else:
                             # 默认为随机人编号，添加r-前缀
                             uid = str("r-" + uid)
-                        
                         # 验证种族（肤色）代码
                         if not ethnicity_code.isdigit() or int(ethnicity_code) < 0 or int(ethnicity_code) > 10:
                             self.logger.info(f"Parsing RTF file {line_count} line: the ethnicity field({ethnicity_code}) is out of range (0-10) - skipping")
                             continue
-                        
                         # 创建基础数据记录
                         base_data = [
                             uid,
@@ -110,7 +101,6 @@ class RtfParser:
                             hair_color,
                             ethnicity_code
                         ]
-                        
                         # 处理附加字段（如果有）
                         if len(fields) == 14:
                             # 处理可能的零宽空格字符
@@ -134,17 +124,18 @@ class RtfParser:
                             self.rtf_data.append(base_data)
                             self.logger.debug(f"Parsing RTF file {line_count} line basically: {base_data}")
             self.logger.info(f"Completed parsing RTF file, with a total of {len(self.rtf_data)} valid records")
-        except UnicodeDecodeError as e:
-            self.logger.error(f"The RTF file encoding error: {e}")
-            return []
+        except FileNotFoundError:
+            self.logger.error(f"RTF file not found: {path}")
+            raise
+        except UnicodeDecodeError:
+            self.logger.error(f"Encoding error in RTF file: {path}")
+            raise
         except Exception as e:
             self.logger.error(f"Unexpected error while parsing RTF file: {e}")
-            return []
-
+            raise
         # 如果没有找到有效数据
         if not self.rtf_data:
             self.logger.warning("Parsing RTF file... No valid player data found in the RTF file!")
-
         # 确保返回英文数据
         self.rtf_data = self.translate_rtf_data_to_english(self.rtf_data)
         return self.rtf_data
@@ -194,7 +185,7 @@ class RtfParser:
                 self.logger.error("The RTF file is invalid or cannot be recognized.")
                 self.is_rtf_valid = False
         except UnicodeDecodeError as e:
-            self.logger.error(f"RTF file encoding error: {e}")
+            self.logger.error(f"Encoding error while validating RTF file: {e}")
             return False
         except Exception as e:
             self.logger.error(f"Unexpected error while validating RTF file: {e}")
@@ -223,20 +214,18 @@ class RtfParser:
                 self.logger.error(f"The nationality translation JSON not found: {e}")
                 return rtf_data
             except json.JSONDecodeError as e:
-                self.logger.error(f"The nationality translation JSON decoding error: {e}")
+                self.logger.error(f"Decoding error in nationality translation JSON: {e}")
                 return rtf_data
         else:
             tr_map = self._translation_cache['map']
-
         # 检查翻译映射表是否为空
         if not tr_map:
             self.logger.error("The nationality translation JSON is empty!")
             return rtf_data
-
         translated_data = []
         self.logger.info(f"Translating RTF data from {self.rtf_language} to English...")
         for record in rtf_data:
-            # 字段顺序: [0]UID, [1]主要国籍, [2]第二国籍, [3]姓名, [4]头发长度, [5]头发颜色, [6]种族代码...
+            # 字段顺序: [0]UID, [1]主要国籍, [2]第二国籍, [3]姓名, [4]头发长度, [5]头发颜色, [6]肤色代码...
             uid = record[0]
             primary = record[1]
             second = record[2]
@@ -250,6 +239,5 @@ class RtfParser:
             ] + record[3:]  # 姓名、头发长度、头发颜色、肤色代码等其他字段保持不变
             translated_data.append(translated_record)
             self.logger.debug(f"Translating UID {uid}: '{primary}'->'{tr_primary}', '{second}'->'{tr_second}'")
-
         self.logger.info(f"Completed translating {len(translated_data)} records from RTF data.")
         return translated_data

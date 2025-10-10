@@ -113,7 +113,7 @@ class NewGANManager(toga.App):
 
         # Log application startup information
         # 记录应用启动信息
-        self.logger.info("Starting Application\n-----------------------------------------")
+        self.logger.info("Starting Application\n-------------------------------------------")
         self.logger.info(f"Application Path: {str(self.paths.app)}")
     def _setup_application_data(self):
         """
@@ -210,7 +210,7 @@ class NewGANManager(toga.App):
     def on_exit(self):
         """当应用程序退出时执行"""
         if hasattr(self, "logger"):
-            self.logger.info("Application is exiting...\n-----------------------------------------")
+            self.logger.info("Application is exiting...\n-------------------------------------------")
         return super().on_exit()
 
     # No usage

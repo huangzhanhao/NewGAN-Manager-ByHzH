@@ -7,13 +7,13 @@ class FaceMapper:
     def __init__(self, img_dir, prf_manager):
         self.img_dir = img_dir
         self.profile_manager = prf_manager
-        self.eth_map = {}
+        self.faces_map = {}
         # 记录img_dir目录下所有子目录(种族分类)名称
         eth_dirs = [f.name for f in os.scandir(img_dir) if f.is_dir()]
         # 记录每个种族分类文件夹中的图片名称(不含扩展名)
         for dir in eth_dirs:
-            dir_imgs = set([f.name.split('.')[0] for f in os.scandir(img_dir + dir) if f.is_file()])
-            self.eth_map[dir] = dir_imgs
+            dir_imgs = set([f.name.split('.')[0] for f in os.scandir(os.path.join(img_dir, dir)) if f.is_file()])
+            self.faces_map[dir] = dir_imgs
         self.logger = logging.getLogger("NewGAN App")
 
     def generate_mapping(self, rtf_data, mode, duplicates=True):
@@ -28,15 +28,14 @@ class FaceMapper:
         mapping = []
         xml_data = {}
         prf_imgs = []
-
         # 处理Preserve和Overwrite模式，先读取现有config.xml文件
         if mode in ["Preserve", "Overwrite"]:
             xml_parser = XmlParser()
             xml_data = xml_parser.parse_xml(os.path.join(self.img_dir, "config.xml"))
             prf_imgs = self.get_xml_images(xml_data)
             if not duplicates and mode == "Preserve":
-                for eth in self.eth_map:
-                    self.eth_map[eth] = self.eth_map[eth] - set(prf_imgs)
+                for eth in self.faces_map:
+                    self.faces_map[eth] = self.faces_map[eth] - set(prf_imgs)
         self.logger.info(f"Starting to build 'player-image' mapping, mode: {mode}...")
         # 根据模式选择处理方式
         if mode == "Preserve":
@@ -45,7 +44,6 @@ class FaceMapper:
             mapping = self._process_overwrite_mode(rtf_data, xml_data, duplicates)
         else:  # Generate模式
             mapping = self._process_generate_mode(rtf_data, duplicates)
-                    
         self.logger.info(f"Completed building the 'player-image' mapping relationship, with a total of {len(mapping)} records")
         return mapping
 
@@ -119,9 +117,9 @@ class FaceMapper:
         # 过滤掉XML中已存在的球员
         filtered_rtf = [p for p in rtf_data if p[0] not in xml_data]
         for player in filtered_rtf:
-            player_mapping = self._build_player_mapping(player, duplicates)
-            if player_mapping:
-                mapping.append(player_mapping)
+            player_to_mapping = self._build_player_mapping(player, duplicates)
+            if player_to_mapping:
+                mapping.append(player_to_mapping)
         self.logger.info(f"The 'Preserve' mode builds new 'player-image' mappings, with a total of {len(mapping)} new records.")
         # 添加XML中所有球员
         self.logger.info(f"The 'Preserve' mode preserves the 'player-image' mapping in the original XML file, with a total of {len(xml_data)} records.")
@@ -133,9 +131,9 @@ class FaceMapper:
         """处理Overwrite模式逻辑"""
         mapping = []
         for player in rtf_data:
-            player_mapping = self._build_player_mapping(player, duplicates)
-            if player_mapping:
-                mapping.append(player_mapping)
+            player_to_mapping = self._build_player_mapping(player, duplicates)
+            if player_to_mapping:
+                mapping.append(player_to_mapping)
                 # 从XML数据中移除已处理的球员
                 if player[0] in xml_data:
                     del xml_data[player[0]]
@@ -144,7 +142,6 @@ class FaceMapper:
         self.logger.info(f"The 'Overwrite' mode preserves unprocessed 'player-image' mapping from the original XML file, with a total of {len(xml_data)} records.")
         for uid, values in xml_data.items():
             mapping.append([uid, values["ethnicity"], values["image"]])
-            
         return mapping
 
     def _process_generate_mode(self, rtf_data, duplicates):
@@ -165,34 +162,33 @@ class FaceMapper:
         # 修正种族分类
         p_ethnic = self.correct_ethnic(player, n1_ethnic, n2_ethnic)
         if p_ethnic is None:
-            self.logger.error(f"Unable to determine the race of player {player[0]} - skipping")
+            self.logger.error(f"Unable to determine the ethnicity of player {player[0]} - skipping")
             return None
-        if p_ethnic not in self.eth_map:
-            self.logger.error(f"Player {player[0]}'s race classification '{p_ethnic}' is invalid - skipping")
+        if p_ethnic not in self.faces_map:
+            self.logger.error(f"Player {player[0]}'s ethnicity '{p_ethnic}' is not in face pack - skipping")
             return None
         # 获取图片池并选择图片
         image_pools = self._get_image_pool(p_ethnic, player[1])
         player_img = self.pick_image_from_pools(image_pools, duplicates)
         if player_img is None:
-            self.logger.warning(f"Player {player[0]}'s race classification {p_ethnic} has no available images - skipping")
+            self.logger.warning(f"Player {player[0]}'s ethnicity pack {image_pools} has no available images - skipping")
             return None
-
-        self.logger.debug(f"Constructing 'player-image' mapping: [ {player[0]} - {p_ethnic} - {player_img} ]")
+        self.logger.debug(f"Builded 'player-image' mapping: [ {player[0]} - {p_ethnic} - {player_img} ]")
         return [player[0], p_ethnic, player_img]
 
     def _get_image_pool(self, ethnicity, nationality):
         """获取优先级图片池：国籍文件夹 > 国籍+种族文件夹 > 默认池"""
         pools = []
         # 1. 国籍文件夹
-        if nationality in self.eth_map and self.eth_map[nationality]:
-            pools.append(self.eth_map[nationality])
+        if nationality in self.faces_map and self.faces_map[nationality]:
+            pools.append(self.faces_map[nationality])
         # 2. 种族文件夹
-        if ethnicity in self.eth_map and self.eth_map[ethnicity]:
-            pools.append(self.eth_map[ethnicity])
-        # 3. 默认池：当国籍文件夹和种族文件夹都未包含在self.eth_map集合时，添加self.eth_map所有的文件夹到图片池
-        if nationality not in self.eth_map and ethnicity not in self.eth_map:
-            for eth in self.eth_map:
-                pools.append(self.eth_map[eth])
+        if ethnicity in self.faces_map and self.faces_map[ethnicity]:
+            pools.append(self.faces_map[ethnicity])
+        # 3. 默认池：当国籍文件夹和种族文件夹都未包含在头像包(self.face_map集合)内时，添加self.face_map所有的文件夹到图片池
+        if nationality not in self.faces_map and ethnicity not in self.faces_map:
+            for eth in self.faces_map:
+                pools.append(self.faces_map[eth])
         return pools
 
     def pick_image_from_pools(self, pools, duplicates):
@@ -206,8 +202,12 @@ class FaceMapper:
         return None
         
     def pick_image(self, ethnicity, duplicates):
-        """从指定种族分类中选择一张图片"""
-        return self.pick_image_from_pools([self.eth_map[ethnicity]], duplicates)
+        """从指定种族分类中选择一张图片(兼容旧版)"""
+        try:
+            return self.pick_image_from_pools([self.faces_map[ethnicity]], duplicates)
+        except KeyError:
+            self.logger.error(f"Ethnicity '{ethnicity}' not found in face_map")
+            return None
 
     def get_xml_images(self, xml_data):
         """从XML数据中提取已使用的图片列表"""

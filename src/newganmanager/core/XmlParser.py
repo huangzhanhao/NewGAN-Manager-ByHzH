@@ -32,8 +32,10 @@ class XmlParser:
                                 self.logger.debug(f"Parsing XML {count} record: {result_data[uid]}")
         except FileNotFoundError:
             self.logger.error(f"File not found: {path}")
+            raise
         except Exception as e:
-            self.logger.error(f"Error occurred while processing config.xml file: {str(e)}")
+            self.logger.error(f"Error while parsing config.xml file: {e}")
+            raise
         self.logger.info(f"Completed parsing config.xml, found {len(result_data)} records")
         return result_data
 
