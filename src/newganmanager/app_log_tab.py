@@ -69,38 +69,76 @@ class LogTab:
         # Start UI log processing with asyncio
         # 使用 asyncio 启动UI日志处理
         self.ui_log_queue = asyncio.Queue()
-        self.app.loop.call_soon(self._process_ui_logs_async)
+        self._ui_update_task = None
+        self._start_ui_log_processing()
 
-    def _process_ui_logs_async(self):
-        """使用 asyncio 处理 UI 日志队列"""
-        # 创建异步任务处理日志队列
-        asyncio.create_task(self._process_ui_logs_task())
+    def _start_ui_log_processing(self):
+        """启动UI日志处理任务"""
+        if self._ui_update_task is None:
+            self._ui_update_task = asyncio.create_task(self._process_ui_logs_task())
 
     async def _process_ui_logs_task(self):
-        """异步处理日志队列的任务"""
-        # 获取UI队列
+        """异步处理日志队列的任务 - 批量处理模式"""
         ui_queue = self.app.log_manager.get_ui_queue()
+        batch_interval = 0.05  # 50ms 批处理间隔
         while True:
             try:
-                # 从原始UI队列获取日志记录
-                record = await ui_queue.get()
-                # 将日志记录存储到log_store中，限制最大数量为10000
-                if len(self.log_store) >= self.max_log_store:
-                    self.log_store.pop(0)
-                self.log_store.append(record)
-                # 使用 UI 线程安全的方式更新 UI
-                if hasattr(self, 'log_area') and self.log_area:
-                    self.app.loop.call_soon(
-                        self._add_log_to_area, record
-                    )
+                # 收集一批日志记录
+                batch_records = []
+                start_time = asyncio.get_event_loop().time()
+                # 在批处理时间窗口内尽可能多地收集日志
+                while (asyncio.get_event_loop().time() - start_time) < batch_interval:
+                    try:
+                        # 非阻塞地尝试获取日志记录
+                        record = await asyncio.wait_for(ui_queue.get(), timeout=0.001)
+                        batch_records.append(record)
+                        # 限制单次批处理的最大数量，防止内存溢出
+                        if len(batch_records) >= 100:
+                            break
+                    except asyncio.TimeoutError:
+                        # 队列为空，稍作等待
+                        await asyncio.sleep(0.001)
+                        break
+                # 处理收集到的日志记录
+                if batch_records:
+                    # 更新log_store
+                    for record in batch_records:
+                        if len(self.log_store) >= self.max_log_store:
+                            self.log_store.pop(0)
+                        self.log_store.append(record)
+                    # 批量更新UI
+                    if hasattr(self, 'log_area') and self.log_area:
+                        await self._add_logs_batch_to_area(batch_records)
             except Exception as e:
-                # 出现异常时等待一段时间再继续
-                await asyncio.sleep(0.01)
+                self.logger.error(f"Error in log processing task: {e}")
+                await asyncio.sleep(0.1)
 
-    def _add_log_to_area(self, record):
-        if not self._filter_log(record):  # 筛选日志记录
+    async def _add_logs_batch_to_area(self, records):
+        """批量添加日志到显示区域"""
+        if not hasattr(self, 'log_area') or not self.log_area:
             return
-        self.log_area.value += f"{self.app.log_manager.formatter.format(record)}\n"
+        # 检查是否需要显示这些日志
+        filtered_formatted_logs = []
+        for record in records:
+            if self._filter_log(record):
+                formatted_log = self.app.log_manager.formatter.format(record)
+                filtered_formatted_logs.append(formatted_log)
+        if not filtered_formatted_logs:
+            return
+        # 批量更新文本内容
+        current_text = self.log_area.value
+        new_logs_text = "\n".join(filtered_formatted_logs)
+        if current_text:
+            updated_text = current_text + "\n" + new_logs_text
+        else:
+            updated_text = new_logs_text
+        # 限制显示的日志行数以提高性能
+        max_display_lines = 8000  # 最多显示8000行
+        lines = updated_text.split('\n')
+        if len(lines) > max_display_lines:
+            lines = lines[-max_display_lines:]
+            updated_text = '\n'.join(lines)
+        self.log_area.value = updated_text
         self.log_area.scroll_to_bottom()
 
     def _filter_log(self, record):
