@@ -5,7 +5,7 @@ name: Linux
 
 on:
   push:
-    branches: [ master, workflow-test, app-path ]
+    branches: [ master, workflow-tests, app-path ]
   pull_request:
     branches: [ master ]
 

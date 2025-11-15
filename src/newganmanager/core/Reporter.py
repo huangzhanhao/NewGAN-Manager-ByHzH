@@ -1,10 +1,10 @@
-from dhooks import Webhook, Embed, File
-from xmlparser import XML_Parser
+from dhooks import Embed, File, Webhook
+from .XmlParser import XmlParser
 
 
 class Reporter:
     def __init__(self, webhook_url, config_xml):
-        self.xml_parser = XML_Parser()
+        self.xml_parser = XmlParser()
         self.webhook = Webhook(webhook_url)
         self.xml = config_xml
 
