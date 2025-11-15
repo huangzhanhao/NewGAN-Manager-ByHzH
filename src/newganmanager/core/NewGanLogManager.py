@@ -2,17 +2,19 @@ import logging
 import logging.handlers
 import queue
 import os
+import asyncio
 
 class UIHandler(logging.Handler):
     """Handler that forwards log records to a UI queue."""
-    def __init__(self, ui_queue: queue.Queue):
+    def __init__(self, ui_queue: asyncio.Queue, loop):
         super().__init__()
         self.ui_queue = ui_queue
+        self.loop = loop
 
     def emit(self, record: logging.LogRecord):
         try:
-            # Put the record into the UI queue for the LogTab to consume
-            self.ui_queue.put(record)
+            # 使用线程安全的方式将记录放入异步队列
+            asyncio.run_coroutine_threadsafe(self.ui_queue.put(record), self.loop)
         except Exception:
             self.handleError(record)
 
@@ -23,7 +25,7 @@ class NewGanLogManager:
         self.backup_count = int(3)
         self.log_level = logging.DEBUG
         self.log_queue = queue.Queue(-1)
-        self.ui_queue = queue.Queue(-1)  # queue for UI log records
+        self.ui_queue = asyncio.Queue(-1)  # 使用 asyncio 队列用于UI日志记录
         self.formatter = logging.Formatter("| %(asctime)s | %(name)s | %(levelname)s | %(module)s:%(lineno)d - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",)
         self.listener = None
@@ -49,7 +51,6 @@ class NewGanLogManager:
         # 添加队列处理器
         queue_handler = logging.handlers.QueueHandler(self.log_queue)
         queue_handler.setLevel(self.log_level)
-        # queue_handler.setFormatter(self.formatter)
         logger.addHandler(queue_handler)
 
         # 创建日志目录
@@ -67,9 +68,8 @@ class NewGanLogManager:
         file_handler.setFormatter(self.formatter)
 
         # 创建UI处理器
-        ui_handler = UIHandler(self.ui_queue)
+        ui_handler = UIHandler(self.ui_queue, asyncio.get_event_loop())
         ui_handler.setLevel(self.log_level)
-        ui_handler.setFormatter(self.formatter)
 
         # 创建并启动QueueListener，它会在内部创建线程处理日志
         self.listener = logging.handlers.QueueListener(
@@ -80,7 +80,7 @@ class NewGanLogManager:
         )
         self.listener.start()
     
-    def get_ui_queue(self) -> queue.Queue:
+    def get_ui_queue(self) -> asyncio.Queue:
         """获取UI队列，供LogTab使用"""
         return self.ui_queue
     

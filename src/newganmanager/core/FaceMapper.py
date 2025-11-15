@@ -48,7 +48,7 @@ class FaceMapper:
         return mapping
 
     def correct_ethnic(self, player, temp_eth1, temp_eth2):
-        """根据角色肤色代码修正种族分类
+        """根据player的种族代码进行修正种族分类
         Args:
             player: 角色数据
             temp_eth1: 临时种族1（基于主要国籍）
@@ -56,17 +56,17 @@ class FaceMapper:
         Returns:
             str: 修正后的种族分类
         """
-        skin_code = player[6]
+        ethnicity_code = player[6]
         p_ethnic = temp_eth1  # 默认值
         
-        if skin_code == "0":
+        if ethnicity_code == "0":
             if "Scandinavian" in [temp_eth1, temp_eth2]:
                 p_ethnic = "Scandinavian"
             elif "Caucasian" in [temp_eth1, temp_eth2]:
                 p_ethnic = "Caucasian"
             else:
                 p_ethnic = "Central European"
-        elif skin_code in ["1"]:
+        elif ethnicity_code in ["1"]:
             if "Caucasian" in [temp_eth1, temp_eth2]:
                 p_ethnic = "Caucasian"
             elif "EECA" in [temp_eth1, temp_eth2]:
@@ -83,24 +83,24 @@ class FaceMapper:
                 p_ethnic = "South American"
             else:
                 p_ethnic = "Central European"
-        elif skin_code == "2":
+        elif ethnicity_code == "2":
             p_ethnic = "MESA" if "MESA" in [temp_eth1, temp_eth2] else "MENA"
-        elif skin_code in ["3", "6", "8", "9"]:
-            if "SAMed" in [temp_eth1, temp_eth2] and skin_code == "6":
+        elif ethnicity_code in ["3", "6", "8", "9"]:
+            if "SAMed" in [temp_eth1, temp_eth2] and ethnicity_code == "6":
                 p_ethnic = "SAMed"
-            elif "Seasian" in [temp_eth1, temp_eth2] and skin_code == "8":
+            elif "Seasian" in [temp_eth1, temp_eth2] and ethnicity_code == "8":
                 p_ethnic = "Seasian"
-            elif "South American" in [temp_eth1, temp_eth2] and skin_code in ["3", "9"]:
+            elif "South American" in [temp_eth1, temp_eth2] and ethnicity_code in ["3", "9"]:
                 p_ethnic = "South American"
             else:
                 p_ethnic = "African"
-        elif skin_code == "4":
+        elif ethnicity_code == "4":
             p_ethnic = "MESA"
-        elif skin_code == "5":
+        elif ethnicity_code == "5":
             p_ethnic = "Seasian"
-        elif skin_code == "7":
+        elif ethnicity_code == "7":
             p_ethnic = "South American"
-        elif skin_code == "10":
+        elif ethnicity_code == "10":
             if "MESA" in [temp_eth1, temp_eth2]:
                 p_ethnic = "MESA"
             elif "Seasian" in [temp_eth1, temp_eth2]:

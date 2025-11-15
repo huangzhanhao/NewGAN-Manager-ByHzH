@@ -1,9 +1,8 @@
 import logging
 import os
 import platform
-import queue
 import subprocess
-import threading
+import asyncio
 import toga
 from toga.style import Pack
 from travertino.constants import COLUMN, ROW
@@ -35,7 +34,6 @@ class LogTab:
             on_change=self._on_switch_or_selector_change,
             style=Pack(margin=5, width=120)
         )
-        # self.log_level_selector.value = "INFO"  # 默认选择INFO级别，以触发_filter_logs方法
         self.open_logfile_button = toga.Button(
             text="Open Log File", on_press=self._open_log_file, style=Pack(margin=5)
         )
@@ -61,7 +59,6 @@ class LogTab:
             children=[top_row, self.log_area],
             style=Pack(direction=COLUMN, margin=5),
         )
-        
         self.level_map = {
             "DEBUG": logging.DEBUG,
             "INFO": logging.INFO,
@@ -69,34 +66,36 @@ class LogTab:
             "ERROR": logging.ERROR,
             "CRITICAL": logging.CRITICAL
         }
-        # Start UI log processing thread
-        # 启动UI日志处理线程
-        self.ui_log_thread = threading.Thread(target=self._process_ui_logs, daemon=True)
-        self.ui_log_thread.start()
+        # Start UI log processing with asyncio
+        # 使用 asyncio 启动UI日志处理
+        self.ui_log_queue = asyncio.Queue()
+        self.app.loop.call_soon(self._process_ui_logs_async)
 
-    def _process_ui_logs(self):
-        """该方法在单独的线程中运行，持续监听ThreadedLogging实例的UI日志队列，并将日志记录保存到log_store中
-        """
+    def _process_ui_logs_async(self):
+        """使用 asyncio 处理 UI 日志队列"""
+        # 创建异步任务处理日志队列
+        asyncio.create_task(self._process_ui_logs_task())
+
+    async def _process_ui_logs_task(self):
+        """异步处理日志队列的任务"""
         # 获取UI队列
         ui_queue = self.app.log_manager.get_ui_queue()
         while True:
             try:
-                # 从UI队列获取日志记录
-                record = ui_queue.get(timeout=0.5)  # 设置超时以允许线程定期检查
+                # 从原始UI队列获取日志记录
+                record = await ui_queue.get()
                 # 将日志记录存储到log_store中，限制最大数量为10000
                 if len(self.log_store) >= self.max_log_store:
                     self.log_store.pop(0)
                 self.log_store.append(record)
-                # 使用 GUI 线程安全的方式更新 UI
+                # 使用 UI 线程安全的方式更新 UI
                 if hasattr(self, 'log_area') and self.log_area:
-                    self.app.loop.call_soon_threadsafe(
+                    self.app.loop.call_soon(
                         self._add_log_to_area, record
                     )
-            except queue.Empty:
-                # 队列为空时继续循环
-                continue
             except Exception as e:
-                print(f"Error in UI log processing thread: {e}")
+                # 出现异常时等待一段时间再继续
+                await asyncio.sleep(0.01)
 
     def _add_log_to_area(self, record):
         if not self._filter_log(record):  # 筛选日志记录
@@ -129,6 +128,7 @@ class LogTab:
             filtered_logs.append(self.app.log_manager.formatter.format(record))
         self.log_area.value = "\n".join(filtered_logs) + "\n"
         self.log_area.scroll_to_bottom()
+
     def _open_log_file(self, widget):
         """当打开日志文件按钮点击时回调"""
         try:

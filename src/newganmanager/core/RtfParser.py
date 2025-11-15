@@ -37,14 +37,14 @@ class RtfParser:
     def parse_rtf(self, path, filter_newgan=True):
         """
         解析RTF文件，提取球员数据
-        字段顺序：UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码
+        字段顺序：UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 种族代码
         Args:
             path (str): RTF文件的路径
             filter_newgan (bool): 是否过滤掉非NewGAN球员，默认为True
         Returns:
             list: 包含球员信息的列表，每个球员信息是一个包含以下元素的列表：
-                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码] 或
-                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 肤色代码, 新版肤色代码, 面部, 俱乐部, 年龄, 身高, 体重, 是否为随机人]
+                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 种族代码] 或
+                  [UID, 主要国籍, 第二国籍, 姓名, 头发长度, 头发颜色, 种族代码, 肤色代码, 面部, 俱乐部, 年龄, 身高, 体重, 是否为随机人]
         """
         # 首先验证RTF文件格式
         if not self.is_rtf_valid:
@@ -225,7 +225,7 @@ class RtfParser:
         translated_data = []
         self.logger.info(f"Translating RTF data from {self.rtf_language} to English...")
         for record in rtf_data:
-            # 字段顺序: [0]UID, [1]主要国籍, [2]第二国籍, [3]姓名, [4]头发长度, [5]头发颜色, [6]肤色代码...
+            # 字段顺序: [0]UID, [1]主要国籍, [2]第二国籍, [3]姓名, [4]头发长度, [5]头发颜色, [6]种族代码...
             uid = record[0]
             primary = record[1]
             second = record[2]
@@ -236,7 +236,7 @@ class RtfParser:
                 uid,
                 tr_primary,
                 tr_second
-            ] + record[3:]  # 姓名、头发长度、头发颜色、肤色代码等其他字段保持不变
+            ] + record[3:]  # 姓名、头发长度、头发颜色、种族代码等其他字段保持不变
             translated_data.append(translated_record)
             self.logger.debug(f"Translating UID {uid}: '{primary}'->'{tr_primary}', '{second}'->'{tr_second}'")
         self.logger.info(f"Completed translating {len(translated_data)} records from RTF data.")
