@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import logging
 import toga
 from toga.style import Pack
@@ -197,8 +198,23 @@ class MainTab:
             children=[self.club_label, self.club_info, self.age_label, self.age_info, self.height_label, self.height_info, self.weight_label, self.weight_info],
             style=Pack(direction=ROW)
         )
+        self.img_input = toga.TextInput(placeholder="Image to replace...", style=Pack(margin=5, flex=1))
+        self.img_button = toga.Button(
+            text="Browse",
+            on_press=self._action_open_file_dialog,
+            style=Pack(margin=5)
+        )
+        self.replace_it_button = toga.Button(
+            text="Replace it",
+            on_press=self._replace_it,
+            style=Pack(margin=5)
+        )
+        row_box4 = toga.Box(
+            children=[self.img_input, self.img_button, self.replace_it_button],
+            style=Pack(direction=ROW, margin=5)
+        )
         detail_box = toga.Box(
-            children=[row_box1, row_box2, row_box3],
+            children=[row_box1, row_box2, row_box3, toga.Divider(), row_box4],
             style=Pack(direction=COLUMN, margin=5, flex=1)
         )
         self.viewer_box = toga.Box(
@@ -318,20 +334,31 @@ class MainTab:
             pass
 
     async def _action_open_file_dialog(self, widget):
-        self.logger.info("Select RTF file...")
         try:
-            dialog = toga.OpenFileDialog(title="Open RTF file", multiple_select=False, file_types=["rtf"])
-            fname = await self.app.main_window.dialog(dialog)
-            if fname is not None:
-                fname = str(fname)
-                self.rtf_input.value = fname
-                self.app.profile_manager.prf_cfg["rtf"] = fname
-                self.logger.info(f"RTF file: {fname}")
-                self.app.profile_manager.save_config(
-                    str(self.app.paths.app) + "/.user/" + self.app.profile_manager.cur_prf + ".json", 
-                    self.app.profile_manager.prf_cfg
-                )
-            self.set_btns(True)
+            if widget == self.rtf_button:
+                # RTF文件按钮触发的逻辑
+                dialog = toga.OpenFileDialog(title="Open RTF file", multiple_select=False, file_types=["rtf"])
+                fname = await self.app.main_window.dialog(dialog)
+                if fname is not None:
+                    fname = str(fname)
+                    self.logger.info("Select RTF file...")
+                    self.rtf_input.value = fname
+                    self.app.profile_manager.prf_cfg["rtf"] = fname
+                    self.logger.info(f"RTF file: {fname}")
+                    self.app.profile_manager.save_config(
+                        str(self.app.paths.app) + "/.user/" + self.app.profile_manager.cur_prf + ".json", 
+                        self.app.profile_manager.prf_cfg
+                    )
+                    self.set_btns(True)
+            elif widget == self.img_button:
+                # 图片文件按钮触发的逻辑
+                dialog = toga.OpenFileDialog(title="Select image file", multiple_select=False, file_types=["png", "jpg", "jpeg"])
+                fname = await self.app.main_window.dialog(dialog)
+                if fname is not None:
+                    fname = str(fname)
+                    self.logger.info("Select image file...")
+                    self.img_input.value = fname
+                    self.logger.info(f"Image file: {fname}")
         except Exception:
             self.logger.error("Fatal error in main loop", exc_info=True)
             pass
@@ -461,7 +488,7 @@ class MainTab:
             await self._save_profile_metadata(profile)
             # 完成
             await self._update_progress("Finished! :)", 100)
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.01)
             await self.app.show_info("Finished! :)")
         except Exception as e:
             self.logger.error(f"Error in execute_replace_faces: {e}")
@@ -588,3 +615,33 @@ class MainTab:
             else:
                 self.logger.warning("No RTF data available for previewing player details")
         return
+    
+    async def _replace_it(self, widget):
+        uid = self.uid_info.value.strip()
+        image_path = self.img_input.value.strip()
+        self.logger.info(f"Replacing UID: {uid} with image: {image_path}")
+        # 使用正则表达式匹配路径
+        match = re.search(r"[\\/]+([^\\/]+)[\\/]+([^\\/]+)\.(?:png|jpg|jpeg)$", image_path)
+        image = None
+        image_pack = None
+        if match:
+            image_pack = match.group(1)  # 上一级文件夹名
+            image = match.group(2)        # 头像文件名（不含扩展名）
+        if uid and image_path and image and image_pack:
+            player = [uid, image_pack, image]
+            try:
+                self.app.profile_manager.single_replacement_in_xml(player, self.save_backup.value)
+                # 更新缓存中的mapping_data
+                if self.mapping_data:
+                    for p in self.mapping_data:
+                        if p and len(p) > 0 and p[0] == uid:
+                            p[1] = image_pack
+                            p[2] = image
+                            self.logger.info(f"Updated mapping data for UID: {uid}")
+                            break
+                await self.app.show_info(f"Successfully replaced UID: {uid} with {image_pack}/{image}")
+            except Exception as e:
+                await self.app.throw_error(f"Error replacing face for UID {uid}: {e}")
+        else:
+            self.logger.warning("UID or valid image path is empty")
+            await self.app.throw_error("Please provide both UID and valid image path")

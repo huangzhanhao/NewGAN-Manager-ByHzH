@@ -12,7 +12,7 @@ from .core.ProfileManager import ProfileManager
 # from .core.XmlParser import XmlParser
 from .app_log_tab import LogTab
 from .app_main_tab import MainTab
-from .core.LogManager import NewGanLogManager
+from .core.NewGanLogManager import NewGanLogManager
 
 
 def main():
@@ -196,7 +196,7 @@ class NewGANManager(toga.App):
         self.commands.add(usage, troubleshooting, discord, faq)
 
     async def throw_error(self, msg):
-        self.logger.debug(f"Error window: {msg}")
+        self.logger.error(f"Error window: {msg}")
         dialog = toga.ErrorDialog("Error", msg)
         if self.main_window is not None:
             await self.main_window.dialog(dialog)
