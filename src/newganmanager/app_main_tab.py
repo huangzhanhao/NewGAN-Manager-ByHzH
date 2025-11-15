@@ -466,28 +466,33 @@ class MainTab:
                 self.app.profile_manager.prf_cfg['rtf'] = ''
                 self.rtf_input.value = ''
                 return
+            await asyncio.sleep(0.01)
             # 步骤2: 验证图片目录
             await self._update_progress("Validating image directory...", 10)
             if not await self._validate_image_directory(img_dir):
                 return
             await asyncio.sleep(0.01)
-            # 步骤3: 解析RTF文件
+            # 步骤3: 解析RTF文件 (放到线程池中执行)
             await self._update_progress("Parsing RTF file...", 20)
-            self.rtf_data = await self._parse_rtf_file(rtf, rtf_parser)
+            loop = asyncio.get_event_loop()
+            self.rtf_data = await loop.run_in_executor(None, self._parse_rtf_file, rtf, rtf_parser, self.isNewGAN.value)
             if self.rtf_data is None:
                 return
-            await asyncio.sleep(0.1)
-            # 步骤4: 生成映射数据
+            await asyncio.sleep(0.01)
+            # 步骤4: 生成映射数据 (放到线程池中执行)
             await self._update_progress("Mapping player to image...", 40)
-            self.mapping_data = await self._generate_mapping_data(img_dir, self.rtf_data, mode)
+            loop = asyncio.get_event_loop()
+            self.mapping_data = await loop.run_in_executor(None, self._generate_mapping_data, img_dir, self.rtf_data, mode, self.allow_duplicates.value)
             if self.mapping_data is None:
                 return
-            await asyncio.sleep(0.1)
-            # 步骤5: 生成config.xml文件
+            await asyncio.sleep(0.01)
+            # 步骤5: 生成config.xml文件 (放到线程池中执行)
             await self._update_progress("Generating config.xml...", 80)
-            if not await self._generate_config_xml(self.mapping_data):
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self._generate_config_xml, self.mapping_data, self.app.profile_manager.prf_cfg["img_dir"], self.app.profile_manager.root_dir, self.app.profile_manager.logger, self.save_backup.value)
+            if not result:
                 return
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.01)
             # 步骤6: 保存元数据
             await self._update_progress("Saving profile metadata...", 90)
             await self._save_profile_metadata(profile)
@@ -510,42 +515,40 @@ class MainTab:
         """更新进度条和状态标签的辅助方法"""
         self.status_label.text = status
         self.progress_bar.value = value
-        # 让出控制权，确保UI更新
         await asyncio.sleep(0.01)
 
-    async def _parse_rtf_file(self, rtf_path, rtf_parser):
+    def _parse_rtf_file(self, rtf_path, rtf_parser, filter_newgan):
         """解析RTF文件"""
         try:
-            return rtf_parser.parse_rtf(rtf_path, self.isNewGAN.value)
+            return rtf_parser.parse_rtf(rtf_path, filter_newgan)
         except FileNotFoundError:
-            await self.app.throw_error("RTF file not found")
+            self.logger.error("RTF file not found")
         except UnicodeDecodeError:
-            await self.app.throw_error("Encoding error in RTF file")
+            self.logger.error("Encoding error in RTF file")
         except Exception as e:
-            await self.app.throw_error(f"Error parsing RTF file: {e}")
+            self.logger.error(f"Error parsing RTF file: {e}")
         return None
 
-    async def _generate_mapping_data(self, img_dir, rtf_data, mode):
+    def _generate_mapping_data(self, img_dir, rtf_data, mode, allow_duplicates):
         """生成映射数据"""
         try:
             return FaceMapper(img_dir, self.app.profile_manager).generate_mapping(
-                rtf_data, mode, self.allow_duplicates.value
+                rtf_data, mode, allow_duplicates
             )
         except Exception as e:
             self.logger.error(f"Error mapping player to image: {e}")
-            await self.app.throw_error(f"Error mapping player to image: {e}")
             return None
 
-    async def _generate_config_xml(self, mapping_data):
+    def _generate_config_xml(self, mapping_data, img_dir, root_dir, logger, save_backup):
         """生成配置文件"""
         try:
             xml_parser = XmlParser()
-            xml_parser.write_xml(mapping_data, self.app.profile_manager.prf_cfg["img_dir"], self.app.profile_manager.root_dir, self.app.profile_manager.logger, self.save_backup.value)
+            xml_parser.write_xml(mapping_data, img_dir, root_dir, logger, save_backup)
             return True
         except FileNotFoundError:
-            await self.app.throw_error("Config_template file not found")
+            self.logger.error("Config_template file not found")
         except Exception as e:
-            await self.app.throw_error(f"Error while writing XML: {e}")
+            self.logger.error(f"Error while writing XML: {e}")
         return False
 
     async def _save_profile_metadata(self, profile):
