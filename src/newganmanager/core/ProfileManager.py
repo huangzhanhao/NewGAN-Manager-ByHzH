@@ -1,9 +1,7 @@
 import os
-import glob
 import logging
 import shutil
 from shutil import copyfileobj
-from datetime import datetime
 from .ConfigManager import ConfigManager
 
 class ProfileManager(ConfigManager):
@@ -91,103 +89,8 @@ class ProfileManager(ConfigManager):
                 self.config["Profile"][key] = False
         self.cur_prf = name
 
-    def _save_backup_config_xml(self, config_path):
-        """
-        Backup config.xml file and maintain only 10 most recent backups
-        Args:
-            config_path (str): Path to the config.xml file to backup
-        """
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup_path = os.path.join(self.prf_cfg["img_dir"], f"config备份_{timestamp}.xml")
-        shutil.copy2(config_path, backup_path)
-        # 最多保存10个备份文件，如果超过则删除最旧的备份
-        backup_pattern = os.path.join(self.prf_cfg["img_dir"], "config备份_*.xml")
-        backup_files = glob.glob(backup_pattern)
-        if len(backup_files) > 10:
-            backup_files.sort()
-            files_to_remove = len(backup_files) - 10
-            for i in range(files_to_remove):
-                os.remove(backup_files[i])
 
-    def write_xml(self, data, save_backup=True):
-        """
-        Write config.xml file with player mappings
-        Args:
-            data (list): List of player mapping data
-            save_backup (bool): Whether to backup the original config.xml before writing
-        Returns:
-            list: List of XML strings that were written
-        """
-        config_path = os.path.join(self.prf_cfg["img_dir"], "config.xml")
-        template_path = os.path.join(self.root_dir, ".config", "config_template")
-        try:
-            # Backup original config.xml if needed
-            if save_backup and os.path.isfile(config_path):
-                self._save_backup_config_xml(config_path)
-            with open(template_path, "r", encoding="UTF-8") as fp:
-                config_template = fp.read()
-                xml_string = []
-            for dat in data:
-                xml_string.append(f'<record from="{dat[1]}/{dat[2]}" to="graphics/pictures/person/{dat[0]}/portrait"/>')
-            xml_players = "\n                ".join(xml_string)
-            xml_config = config_template.replace("[players]", xml_players)
-            config_path = os.path.join(self.prf_cfg["img_dir"], "config.xml")
-            with open(config_path, "w", encoding="UTF-8") as fp:
-                fp.write(xml_config)
-            return xml_string
-        except FileNotFoundError:
-            self.logger.error(f"Config_template file not found: {template_path}")
-            raise
-        except PermissionError as e:
-            self.logger.error(f"Permission denied when accessing config.xml file: {e}")
-            raise
-        except OSError as e:
-            self.logger.error(f"OS error occurred while writing config.xml file: {e}")
-            raise
-        except Exception as e:
-            self.logger.error(f"Unexpected error while writing config.xml file: {e}")
-            raise
 
-    def single_replacement_in_xml(self, player, save_backup=True):
-        if not isinstance(player, (list, tuple)) or len(player) != 3:
-            raise ValueError("Player must be a list or tuple with exactly three elements.")
-        config_path = os.path.join(self.prf_cfg["img_dir"], "config.xml")
-        uid = player[0]
-        pack = player[1]
-        image = player[2]
-        target_substring = f'to="graphics/pictures/person/{uid}/portrait"'
-        new_line = f'\n                <record from="{pack}/{image}" to="graphics/pictures/person/{uid}/portrait"/>'
-        if not os.path.exists(config_path):
-            self.logger.warning(f"config.xml not found at {config_path} - skipping")
-            return
-        try:
-            # Backup original config.xml if needed
-            if save_backup:
-                self._save_backup_config_xml(config_path)
-            with open(config_path, "r", encoding="UTF-8") as f:
-                lines = f.readlines()
-            # Replace the first matching line
-            replaced = False
-            for i, line in enumerate(lines):
-                if target_substring in line:
-                    lines[i] = new_line + '\n'  # readlines() keeps newlines, so preserve it
-                    self.logger.info(f"Replaced uid:{uid} 's face to {pack}/{image} line in {config_path}")
-                    replaced = True
-                    break
-            if not replaced:
-                self.logger.info(f"No line found containing {uid} in {config_path}")
-            # Write back
-            with open(config_path, "w", encoding="UTF-8") as f:
-                f.writelines(lines)
-        except PermissionError as e:
-            self.logger.error(f"Permission denied when accessing config.xml file: {e}")
-            raise
-        except OSError as e:
-            self.logger.error(f"OS error occurred while reading/writing config.xml file: {e}")
-            raise
-        except Exception as e:
-            self.logger.error(f"Unexpected error while swapping XML files: {e}")
-            raise
 
     def swap_xml(self, deact_name, act_name, deact_img_dir, act_img_dir):
         """

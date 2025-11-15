@@ -18,3 +18,4 @@ toga-core==0.5.2
 toga-winforms==0.5.2
 travertino==0.5.2
 urllib3==2.5.0
+dhooks==1.1.4

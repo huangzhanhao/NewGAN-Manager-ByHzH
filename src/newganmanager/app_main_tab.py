@@ -7,6 +7,7 @@ from toga.style import Pack
 from travertino.constants import COLUMN, ROW
 from .core.FaceMapper import FaceMapper
 from .core.RtfParser import RtfParser
+from .core.XmlParser import XmlParser
 from .core.SourceSelection import SourceSelection
 
 
@@ -469,23 +470,28 @@ class MainTab:
             await self._update_progress("Validating image directory...", 10)
             if not await self._validate_image_directory(img_dir):
                 return
+            await asyncio.sleep(0.01)
             # 步骤3: 解析RTF文件
             await self._update_progress("Parsing RTF file...", 20)
             self.rtf_data = await self._parse_rtf_file(rtf, rtf_parser)
             if self.rtf_data is None:
                 return
+            await asyncio.sleep(0.1)
             # 步骤4: 生成映射数据
             await self._update_progress("Mapping player to image...", 40)
             self.mapping_data = await self._generate_mapping_data(img_dir, self.rtf_data, mode)
             if self.mapping_data is None:
                 return
+            await asyncio.sleep(0.1)
             # 步骤5: 生成config.xml文件
             await self._update_progress("Generating config.xml...", 80)
             if not await self._generate_config_xml(self.mapping_data):
                 return
+            await asyncio.sleep(0.1)
             # 步骤6: 保存元数据
             await self._update_progress("Saving profile metadata...", 90)
             await self._save_profile_metadata(profile)
+            await asyncio.sleep(0.01)
             # 完成
             await self._update_progress("Finished! :)", 100)
             await asyncio.sleep(0.01)
@@ -533,7 +539,8 @@ class MainTab:
     async def _generate_config_xml(self, mapping_data):
         """生成配置文件"""
         try:
-            self.app.profile_manager.write_xml(mapping_data, self.save_backup.value)
+            xml_parser = XmlParser()
+            xml_parser.write_xml(mapping_data, self.app.profile_manager.prf_cfg["img_dir"], self.app.profile_manager.root_dir, self.app.profile_manager.logger, self.save_backup.value)
             return True
         except FileNotFoundError:
             await self.app.throw_error("Config_template file not found")
@@ -569,52 +576,83 @@ class MainTab:
         uid = self.uid_info.value.strip()
         if not uid:
             self.logger.warning("The UID to be previewed is empty")
-        else:
-            self.logger.info(f"Previewing UID: {uid}")
-            if hasattr(self, 'mapping_data') and self.mapping_data:
-                if isinstance(self.mapping_data, list) and len(self.mapping_data) > 0:
-                    mapped_player = next((p for p in self.mapping_data if p and len(p) > 0 and (p[0] == uid or p[0] == "r-" + uid)), None)
-                    if mapped_player:
-                        # mapping_data format: [uid, ethnicity, image_filename]
-                        self.uid_info.value = mapped_player[0]
-                        self.img_path.text = f"{mapped_player[1]}\\{mapped_player[2]}"
-                        # 支持多种图片格式 (png, jpg, jpeg)
-                        img_base = os.path.join(self.app.profile_manager.prf_cfg['img_dir'], mapped_player[1], mapped_player[2])
-                        for ext in ['.png', '.jpg', '.jpeg']:
-                            image_file = img_base + ext
-                            if os.path.isfile(image_file):
-                                self.rep_img.image = toga.Image(image_file)
-                                break
-                            else:
-                                self.rep_img.image = toga.Image("resources/apple-touch-icon.png")
+            return
+        self.logger.info(f"Previewing UID: {uid}")
+        # 重置显示内容
+        self.img_path.text = "Image Path: ...\\..."
+        self.rep_img.image = toga.Image("resources/apple-touch-icon.png")
+        ethnicity = None
+        image_name = None
+        # 首先在 mapping_data 中查找
+        if hasattr(self, 'mapping_data') and self.mapping_data:
+            if isinstance(self.mapping_data, list) and len(self.mapping_data) > 0:
+                mapped_player = next((p for p in self.mapping_data if p and len(p) > 0 and (p[0] == uid or p[0] == "r-" + uid)), None)
+                if mapped_player:
+                    # mapping_data format: [uid, ethnicity, image_filename]
+                    self.uid_info.value = mapped_player[0]
+                    ethnicity = mapped_player[1]
+                    image_name = mapped_player[2]
+                    self.img_path.text = f"{ethnicity}\\{image_name}"
+        # 如果在 mapping_data 中未找到，则从 XML 文件中查找
+        if ethnicity is None or image_name is None:
+            self.logger.info(f"UID {uid} not found in mapping_data, checking XML file")
+            xml_parser = XmlParser()
+            img_path = xml_parser.get_imgpath_from_uid(
+                os.path.join(self.app.profile_manager.prf_cfg["img_dir"], "config.xml"), 
+                uid
+            )
+            if img_path:
+                # 解析图片路径 (格式: "ethnicity/image_name")
+                path_parts = img_path.split("/")
+                if len(path_parts) >= 2:
+                    ethnicity = path_parts[0]
+                    image_name = path_parts[1]
+                    # 更新显示的图片路径
+                    self.img_path.text = f"{ethnicity}\\{image_name}"
+                else:
+                    self.logger.warning(f"Invalid image path format for UID {uid}: {img_path}")
             else:
-                self.logger.warning("No mapping data available for previewing player details")
-                self.img_path.text = "Image Path: ...\\..."
+                self.logger.warning(f"UID {uid} not found in config.xml file")
+        # 如果找到了种族和图片名称，则加载图片
+        if ethnicity is not None and image_name is not None:
+            # 构建完整的图片文件路径并尝试加载图片
+            self.logger.info(f"Loading image for UID {uid}: {ethnicity}/{image_name}")
+            img_base = os.path.join(self.app.profile_manager.prf_cfg['img_dir'], ethnicity, image_name)
+            image_found = False
+            for ext in ['.png', '.jpg', '.jpeg']:
+                image_file = img_base + ext
+                if os.path.isfile(image_file):
+                    self.rep_img.image = toga.Image(image_file)
+                    image_found = True
+                    break
+            if not image_found:
+                self.logger.warning(f"Image file not found for UID {uid}")
                 self.rep_img.image = toga.Image("resources/apple-touch-icon.png")
-            # Then get player details from rtf_data
-            if hasattr(self, 'rtf_data') and self.rtf_data:
-                # Each list in rtf_data: [UID, primary_nat, sec_nat, name, hair_length, hair_color, ethnicity_code, ...]
-                player = next((p for p in self.rtf_data if p and len(p) > 0 and (p[0] == uid or p[0] == "r-" + uid)), None)
-                if player:
-                    # [0]UID, [1]primary_nat, [2]sec_nat, [3]name, [4]hair_length, 
-                    # [5]hair_color, [6]ethnicity_code, [7]skin_code, [8]face_id, [9]club, 
-                    # [10]age, [11]height, [12]weight, [13]is_NewGAN
-                    self.nat1_info.value = player[1] if len(player) > 1 else ''
-                    self.nat2_info.value = player[2] if len(player) > 2 else ''
-                    self.name_info.value = player[3] if len(player) > 3 else ''
-                    self.hair_info.value = player[4] if len(player) > 4 else ''
-                    self.hair_color_info.value = player[5] if len(player) > 5 else ''
-                    self.ethnicity_info.value = player[6] if len(player) > 6 else ''
-                    if len(player) > 7:
-                        self.skin_info.value = player[7] if len(player) > 7 else ''
-                        self.club_info.value = player[9] if len(player) > 9 else ''
-                        self.age_info.value = player[10] if len(player) > 10 else ''
-                        self.height_info.value = player[11] if len(player) > 11 else ''
-                        self.weight_info.value = player[12] if len(player) > 12 else ''
-                        self.isNewGAN_info.value = player[13] if len(player) > 13 else ''
+        # 获取球员详细信息从 rtf_data
+        if hasattr(self, 'rtf_data') and self.rtf_data:
+            # Each list in rtf_data: [UID, primary_nat, sec_nat, name, hair_length, hair_color, ethnicity_code, ...]
+            player = next((p for p in self.rtf_data if p and len(p) > 0 and (p[0] == uid or p[0] == "r-" + uid)), None)
+            if player:
+                # [0]UID, [1]primary_nat, [2]sec_nat, [3]name, [4]hair_length, 
+                # [5]hair_color, [6]ethnicity_code, [7]skin_code, [8]face_id, [9]club, 
+                # [10]age, [11]height, [12]weight, [13]is_NewGAN
+                self.nat1_info.value = player[1] if len(player) > 1 else ''
+                self.nat2_info.value = player[2] if len(player) > 2 else ''
+                self.name_info.value = player[3] if len(player) > 3 else ''
+                self.hair_info.value = player[4] if len(player) > 4 else ''
+                self.hair_color_info.value = player[5] if len(player) > 5 else ''
+                self.ethnicity_info.value = player[6] if len(player) > 6 else ''
+                if len(player) > 7:
+                    self.skin_info.value = player[7] if len(player) > 7 else ''
+                    self.club_info.value = player[9] if len(player) > 9 else ''
+                    self.age_info.value = player[10] if len(player) > 10 else ''
+                    self.height_info.value = player[11] if len(player) > 11 else ''
+                    self.weight_info.value = player[12] if len(player) > 12 else ''
+                    self.isNewGAN_info.value = player[13] if len(player) > 13 else ''
             else:
-                self.logger.warning("No RTF data available for previewing player details")
-        return
+                self.logger.warning(f"Player details not found in RTF data for UID: {uid}")
+        else:
+            self.logger.warning("No RTF data available for previewing player details")
     
     async def _replace_it(self, widget):
         uid = self.uid_info.value.strip()
@@ -630,7 +668,8 @@ class MainTab:
         if uid and image_path and image and image_pack:
             player = [uid, image_pack, image]
             try:
-                self.app.profile_manager.single_replacement_in_xml(player, self.save_backup.value)
+                xml_parser = XmlParser()
+                xml_parser.single_replacement_in_xml(player, self.app.profile_manager.prf_cfg["img_dir"], self.app.profile_manager.logger, self.save_backup.value)
                 # 更新缓存中的mapping_data
                 if self.mapping_data:
                     for p in self.mapping_data:
