@@ -4,6 +4,7 @@
 # This file contains the dependencies needed for development on Windows.
 # 此文件包含在 Windows 上开发所需的依赖项。
 
+briefcase==0.3.25
 certifi==2025.10.5
 cffi==2.0.0
 charset-normalizer==3.4.3
