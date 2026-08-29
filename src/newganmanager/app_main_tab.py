@@ -155,7 +155,7 @@ class MainTab:
         self.main_tab_box.add(replacer_box, toga.Divider(style=Pack(margin=10)))
 
         # Add UI components for "Viewer Box"
-        self.rep_img = toga.ImageView(toga.Image("resources/apple-touch-icon.png"), style=Pack(width=180, height=180, margin=10))
+        self.rep_img = toga.ImageView(toga.Image("resources/favicon-400×400.png"), style=Pack(width=180, height=180, margin=10))
         self.img_path = toga.Label(text="Image Path: ", style=Pack(margin=5))
         preview_box = toga.Box(
             children=[self.rep_img, self.img_path],
@@ -245,7 +245,6 @@ class MainTab:
         """
         if not all([self.replace_faces_button, self.dir_button, self.rtf_button]):
             return
-
         if self.app.profile_manager and self.app.profile_manager.cur_prf == "No Profile":
             # 当前为"No Profile"配置文件时，禁用所有按钮
             self.replace_faces_button.enabled = False
@@ -583,7 +582,7 @@ class MainTab:
         self.logger.info(f"Previewing UID: {uid}")
         # 重置显示内容
         self.img_path.text = "Image Path: ...\\..."
-        self.rep_img.image = toga.Image("resources/apple-touch-icon.png")
+        self.rep_img.image = toga.Image("resources/favicon-400×400.png")
         ethnicity = None
         image_name = None
         # 首先在 mapping_data 中查找
@@ -630,7 +629,7 @@ class MainTab:
                     break
             if not image_found:
                 self.logger.warning(f"Image file not found for UID {uid}")
-                self.rep_img.image = toga.Image("resources/apple-touch-icon.png")
+                self.rep_img.image = toga.Image("resources/favicon-400×400.png")
         # 获取球员详细信息从 rtf_data
         if hasattr(self, 'rtf_data') and self.rtf_data:
             # Each list in rtf_data: [UID, primary_nat, sec_nat, name, hair_length, hair_color, ethnicity_code, ...]

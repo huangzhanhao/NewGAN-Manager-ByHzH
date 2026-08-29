@@ -3,21 +3,19 @@ project_name = "NewGAN-Manager"
 bundle = "com.fm"
 version = "1.4.4"
 url = "https://github.com/huangzhanhao/NewGAN-Manager-ByHzH"
-license = "GNU General Public License v3 (GPLv3)"
+license = {file = "LICENSE"}
 author = 'huangzhanhao'
 author_email = "None"
 
 [tool.briefcase.app.newganmanager]
 formal_name = "NewGAN Manager"
 description = "Football Manager NewGAN Replacement Tool"
-icon = "src/newganmanager/resources/favicon"
+icon = "src/newganmanager/resources/favicon.ico"
 sources = ['src/newganmanager']
 requires = [
     "toga>=0.5.2",
     "requests>=2.32.5",
     "dhooks>=1.1.4",
-    # "packaging>=25.0",
-    # "travertino>=0.5.2"
 ]
 
 [tool.briefcase.app.newganmanager.macOS]
