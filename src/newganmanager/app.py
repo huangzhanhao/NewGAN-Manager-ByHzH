@@ -129,22 +129,32 @@ class NewGANManager(toga.App):
         try:
             user_dir = os.path.join(data_path, ".user")
             os.makedirs(user_dir, exist_ok=True)
+            app_user_dir = os.path.join(app_path, ".user")
             user_config_path = os.path.join(user_dir, "cfg.json")
-            if not os.path.isfile(user_config_path):
-                old_user_dir = os.path.join(app_path, ".user")
-                if os.path.isfile(os.path.join(old_user_dir, "cfg.json")):
-                    # 从旧版布局（应用目录下的 .user）迁移用户数据
-                    shutil.copytree(old_user_dir, user_dir, dirs_exist_ok=True)
-                    self.logger.info(f"Migrated user data from {old_user_dir} to {user_dir}")
-                else:
-                    # 首次运行：从应用目录复制默认配置模板
-                    default_config_path = os.path.join(
-                        app_path, ".user", "default_cfg.json"
-                    )
-                    shutil.copyfile(default_config_path, user_config_path)
 
-            # Load current profile and migrate old config
-            # 加载当前配置文件并迁移旧版配置
+            if not os.path.isfile(user_config_path):
+                old_user_cfg = os.path.join(app_user_dir, "cfg.json")
+                if os.path.isfile(old_user_cfg):
+                    # 从旧版布局（应用目录下的 .user）整体迁移用户数据
+                    shutil.copytree(app_user_dir, user_dir, dirs_exist_ok=True)
+                    self.logger.info(f"Migrated user data from {app_user_dir} to {user_dir}")
+                else:
+                    # 首次运行：从应用目录复制全部默认模板文件
+                    if os.path.isdir(app_user_dir):
+                        for fname in os.listdir(app_user_dir):
+                            src = os.path.join(app_user_dir, fname)
+                            dst = os.path.join(user_dir, fname)
+                            if os.path.isfile(src) and not os.path.isfile(dst):
+                                shutil.copyfile(src, dst)
+                                self.logger.info(f"Copied default template: {fname}")
+                    # default_cfg.json → cfg.json（用户配置文件的正式名）
+                    default_cfg = os.path.join(user_dir, "default_cfg.json")
+                    if os.path.isfile(default_cfg) and not os.path.isfile(user_config_path):
+                        shutil.copyfile(default_cfg, user_config_path)
+                        self.logger.info("Created cfg.json from default_cfg.json template")
+
+            # Load current profile
+            # 加载当前配置文件
             self.logger.info("Loading current profile")
             self.profile_manager = ProfileManager(
                 ConfigManager().get_latest_prf(user_config_path),
@@ -153,7 +163,10 @@ class NewGANManager(toga.App):
             )
             self.profile_manager.migrate_config()
         except Exception as e:
-            self.logger.error(f"Failed to setup application data: {e}")
+            self.logger.error(f"Failed to setup application data: {e}", exc_info=True)
+            # 不吞异常：UI 启动时 profile_manager 为 None 会导致后续 MainTab 崩溃，
+            # 这里至少让错误可见，方便排查
+            raise
 
     def _setup_menu(self):
         """
