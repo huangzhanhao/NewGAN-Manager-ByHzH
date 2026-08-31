@@ -96,6 +96,10 @@ src/newganmanager/.user/*.json
 src/newganmanager/.user/*.xml
 src/tests/testing_data/.user/*.json
 src/tests/testing_data/.user/*.xml
+
+# User RTF exports (personal data, never commit)
+src/newganmanager/user_rtf/
+user_rtf/
 # Keep template files
 !src/newganmanager/.user/No Profile.json
 !src/newganmanager/.user/default_cfg.json

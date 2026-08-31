@@ -16,18 +16,25 @@ class FaceMapper:
             self.faces_map[dir] = dir_imgs
         self.logger = logging.getLogger("NewGAN App")
 
-    def generate_mapping(self, rtf_data, mode, duplicates=True):
+    def generate_mapping(self, rtf_data, mode, duplicates=True, cancel_event=None):
         """根据RTF数据生成球员面部图片映射关系
         Args:
             rtf_data: 球员数据列表
             mode (str): 处理模式，可选 "Preserve", "Overwrite" 或 "Generate"
             duplicates (bool): 是否允许重复使用图片，默认为True
+            cancel_event (threading.Event): 取消标志，置位后中断映射并返回None
         Returns:
-            list: 包含球员ID、图像包和图像文件名的映射列表
+            list: 包含球员ID、图像包和图像文件名的映射列表；被取消时返回None
         """
+        def is_cancelled():
+            return cancel_event is not None and cancel_event.is_set()
+
         mapping = []
         xml_data = {}
         prf_imgs = []
+        if is_cancelled():
+            self.logger.info("Mapping cancelled by user before start")
+            return None
         # 处理Preserve和Overwrite模式，先读取现有config.xml文件
         if mode in ["Preserve", "Overwrite"]:
             xml_parser = XmlParser()
@@ -39,11 +46,13 @@ class FaceMapper:
         self.logger.info(f"Starting to build 'player-image' mapping, mode: {mode}...")
         # 根据模式选择处理方式
         if mode == "Preserve":
-            mapping = self._process_preserve_mode(rtf_data, xml_data, duplicates)
+            mapping = self._process_preserve_mode(rtf_data, xml_data, duplicates, cancel_event)
         elif mode == "Overwrite":
-            mapping = self._process_overwrite_mode(rtf_data, xml_data, duplicates)
+            mapping = self._process_overwrite_mode(rtf_data, xml_data, duplicates, cancel_event)
         else:  # Generate模式
-            mapping = self._process_generate_mode(rtf_data, duplicates)
+            mapping = self._process_generate_mode(rtf_data, duplicates, cancel_event)
+        if mapping is None:
+            return None
         self.logger.info(f"Completed building the 'player-image' mapping relationship, with a total of {len(mapping)} records")
         return mapping
 
@@ -111,12 +120,15 @@ class FaceMapper:
                 p_ethnic = "Asian"
         return p_ethnic
 
-    def _process_preserve_mode(self, rtf_data, xml_data, duplicates):
+    def _process_preserve_mode(self, rtf_data, xml_data, duplicates, cancel_event=None):
         """处理Preserve模式逻辑"""
         mapping = []
         # 过滤掉XML中已存在的球员
         filtered_rtf = [p for p in rtf_data if p[0] not in xml_data]
         for player in filtered_rtf:
+            if cancel_event is not None and cancel_event.is_set():
+                self.logger.info("Mapping cancelled by user")
+                return None
             player_to_mapping = self._build_player_mapping(player, duplicates)
             if player_to_mapping:
                 mapping.append(player_to_mapping)
@@ -127,10 +139,13 @@ class FaceMapper:
             mapping.append([uid, values["ethnicity"], values["image"]])
         return mapping
 
-    def _process_overwrite_mode(self, rtf_data, xml_data, duplicates):
+    def _process_overwrite_mode(self, rtf_data, xml_data, duplicates, cancel_event=None):
         """处理Overwrite模式逻辑"""
         mapping = []
         for player in rtf_data:
+            if cancel_event is not None and cancel_event.is_set():
+                self.logger.info("Mapping cancelled by user")
+                return None
             player_to_mapping = self._build_player_mapping(player, duplicates)
             if player_to_mapping:
                 mapping.append(player_to_mapping)
@@ -144,10 +159,18 @@ class FaceMapper:
             mapping.append([uid, values["ethnicity"], values["image"]])
         return mapping
 
-    def _process_generate_mode(self, rtf_data, duplicates):
+    def _process_generate_mode(self, rtf_data, duplicates, cancel_event=None):
         """处理Generate模式逻辑"""
-        mapper = [self._build_player_mapping(p, duplicates) for p in rtf_data
-                if self._build_player_mapping(p, duplicates) is not None]
+        mapper = []
+        for player in rtf_data:
+            if cancel_event is not None and cancel_event.is_set():
+                self.logger.info("Mapping cancelled by user")
+                return None
+            # 每个球员只构建一次映射（此前写法在条件与取值处各调用一次，
+            # 关闭 Allow Duplicates 时会导致图片池被过度消耗）
+            player_to_mapping = self._build_player_mapping(player, duplicates)
+            if player_to_mapping is not None:
+                mapper.append(player_to_mapping)
         self.logger.info(f"The 'Generate' mode builds 'player-image' mappings in the new XML file, with a total of {len(mapper)} records.")
         return mapper
 

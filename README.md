@@ -33,7 +33,7 @@
 ## 环境要求
 
 - **普通用户**：直接下载 Releases 中的安装包，无需安装 Python。
-- **源码运行**：Python 3.11 + `toga` 0.5.2（依赖见 `requirements.txt`；Windows 精简开发依赖见 `requirements-windows-dev.txt`）。
+- **源码运行**：Python 3.11 + `toga` 0.5.2（依赖见 `pyproject.toml` 的 `[project].dependencies`）。
 
 ---
 
@@ -113,35 +113,41 @@
 | `MENA` | 中东与北非 | `YugoGreek` | 巴尔干与希腊 |
 
 - 还可以放**国籍同名目录**（如 `ARG/`、`CHN/`），选图时优先于种族目录。
-- FM 的种族码（0–10）如何参与修正选池，见 [种族特征分类说明.md](src/newganmanager/resources/种族特征分类说明.md) 与 [种族代码示例.xlsx](src/newganmanager/resources/FM%20NewGAN种族代码示例.xlsx)；映射规则的实现见 [FaceMapper.correct_ethnic](src/newganmanager/core/FaceMapper.py)。
+- FM 的种族码（0–10）如何参与修正选池，见 [种族特征分类说明.md](docs/种族特征分类说明.md) 与 [种族代码示例.xlsx](src/newganmanager/resources/FM%20NewGAN种族代码示例.xlsx)；映射规则的实现见 [FaceMapper.correct_ethnic](src/newganmanager/core/FaceMapper.py)。
 - 国籍 → 种族的对照表在 `.config/eth_cfg.json`，可自行增改。
 
 ---
 
 ## 应用数据与配置文件
 
-程序数据都在应用目录（源码运行时为 `src/newganmanager/`）下：
+只读资源随程序分发（源码运行时为 `src/newganmanager/`）；用户运行时数据写入各平台标准用户数据目录（Toga `paths.data`，如 Windows 的 `%LOCALAPPDATA%\<应用名>`、macOS 的 `~/Library/Application Support/<应用名>`、Linux 的 `~/.local/share/<应用名>`）：
 
 ```
+# 应用目录（随程序分发，只读）
 .config/
   eth_cfg.json          国籍（英文三字码）→ 种族目录 对照表
   nat_translation.json  中文国籍 → 英文三字码 对照表（解析中文 RTF 用）
   config_template       config.xml 的固定头尾模板，[players] 为占位符
 .user/
+  default_cfg.json      首次运行时复制到用户数据目录作为 cfg.json
+
+# 用户数据目录（paths.data）
+.user/
   cfg.json              Profile 列表与激活状态（仅一个为 true）
-  default_cfg.json      首次运行时复制为 cfg.json
   <Profile>.json        单个 Profile 的 img_dir / rtf 等设置
   <Profile>.xml         单个 Profile 对应 config.xml 的快照（切换 Profile 时交换）
 newgan.log              运行日志（10 MB × 3 滚动）
 ```
+
+从旧版本升级时，应用目录下的旧 `.user/` 数据会自动迁移到用户数据目录。
 
 ---
 
 ## 从源码运行与打包
 
 ```bash
-# 安装依赖（Windows 开发环境可用 requirements-windows-dev.txt）
-pip install -r requirements.txt
+# 安装依赖
+pip install toga requests dhooks
 
 # 运行：在 src/ 目录下
 cd src && python -m newganmanager
@@ -154,14 +160,12 @@ briefcase build
 briefcase package        # 产物在 dist/
 ```
 
-VSCode 用户可直接使用已配置好的任务与调试（运行 / 测试 / 构建 / flake8），说明见 [.vscode/README.md](.vscode/README.md)。
-
 ```bash
 # 测试（当前为接口占位，断言待补）
 python -m unittest discover -s src/tests -p "test*.py"
 ```
 
-架构、类与方法清单、替换流程与 UML 见 [src/newganmanager/README.md](src/newganmanager/README.md)。
+架构、类与方法清单、替换流程与 UML 见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ---
 
@@ -169,7 +173,7 @@ python -m unittest discover -s src/tests -p "test*.py"
 
 出问题时请先附上日志文件 `newgan.log` 再提 issue：
 - 最快的定位方式是在 `Log` 标签把级别选到 `DEBUG` 复现一次，点 **Open Log File** 直接打开日志。
-- 源码运行时日志在 `src/newganmanager/newgan.log`；Windows 打包版在应用安装目录（通常 `%localappdata%\Programs\NewGAN-Manager\`）下。
+- 日志文件在用户数据目录（Toga `paths.data`，如 Windows 的 `%LOCALAPPDATA%\<应用名>\newgan.log`）。
 
 | 现象 | 原因与处理 |
 | :--- | :--- |
@@ -186,11 +190,11 @@ python -m unittest discover -s src/tests -p "test*.py"
 
 ## 已知问题与待办
 
-- `Profile` 标签页目前是空占位（Profile 管理仍在 `Main` 标签内），见分支 `TODO：ProfileTab`。
-- `.github/workflows/*` 的测试步骤仍指向上游旧模块路径（`src/test_app.py`、`src/test_mapper.py`），重构后已失效，需更新为 `src/tests/`，因此 CI 徽章只作参考。
+- `Profile` 标签页目前是空占位（Profile 管理仍在 `Main` 标签内）。
 - `check_for_update()` 指向的是上游仓库，暂未接入本分支版本源，UI 未调用。
 - 头像包目录含中文/特殊字符路径时，个别系统上图片预览可能加载失败。
 - `src/tests/` 用例多为 TODO 占位，断言待补。
+- 替换任务运行期间切换 Profile 存在竞态（`swap_xml` 与写 `config.xml` 互相覆盖），后续版本计划在任务运行时禁用 Profile 切换。
 
 ---
 

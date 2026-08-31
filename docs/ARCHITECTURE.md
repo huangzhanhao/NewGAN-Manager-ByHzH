@@ -1,7 +1,7 @@
 # NewGAN Manager 项目内部文档 / Project Overview
 
 > 面向维护者的架构文档：模块与方法清单、替换流程、类图、配置文件用法。
-> 使用者文档见仓库根目录 [README.md](../../README.md)。
+> 使用者文档见仓库根目录 [README.md](../README.md)。
 
 ## Class Structure and Internal Methods / 类结构与内部方法
 

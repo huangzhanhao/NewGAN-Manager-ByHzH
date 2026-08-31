@@ -1,27 +1,31 @@
-import asyncio
-import os
-import re
 import logging
+
 import toga
 from toga.style import Pack
 from travertino.constants import COLUMN, ROW
-from .core.FaceMapper import FaceMapper
-from .core.RtfParser import RtfParser
-from .core.XmlParser import XmlParser
+
+from .app_replace_service import ReplaceFacesService
+from .app_viewer import PlayerViewer
 from .core.SourceSelection import SourceSelection
 
 
 class MainTab:
+    """主标签页：Profile 管理、路径选择、模式与开关、替换执行入口
+
+    业务编排委托给 ReplaceFacesService，底部球员预览/单人换脸委托给 PlayerViewer。
+    """
+
     def __init__(self, app):
         self.app = app
         self.logger = logging.getLogger("NewGAN App")
         self.main_tab_box = toga.Box(style=Pack(direction=COLUMN, margin=10))
 
+        # 替换流程控制器（持有最近一次 rtf_data / mapping_data 供 Viewer 读取）
+        self.replace_service = ReplaceFacesService(app)
+
         # Create UI sections with specified label width
         label_width = 110
         button_width = 70
-        self.rtf_data = []
-        self.mapping_data = []
 
         # Add UI components for "Create Profile"
         create_label = toga.Label(text="Create Profile: ", style=Pack(width=label_width, margin=5))
@@ -94,7 +98,7 @@ class MainTab:
         )
         self.mode_selection = SourceSelection(
             items=list(app.mode_info.keys()),
-            value="Preserve",# default mode 默认模式
+            value="Preserve",  # default mode 默认模式
             on_change=self.update_mode_info_by_selection,
             style=Pack(direction=ROW, width=label_width, margin=5)
         )
@@ -154,75 +158,9 @@ class MainTab:
         )
         self.main_tab_box.add(replacer_box, toga.Divider(style=Pack(margin=10)))
 
-        # Add UI components for "Viewer Box"
-        self.rep_img = toga.ImageView(toga.Image("resources/favicon-400×400.png"), style=Pack(width=180, height=180, margin=10))
-        self.img_path = toga.Label(text="Image Path: ", style=Pack(margin=5))
-        preview_box = toga.Box(
-            children=[self.rep_img, self.img_path],
-            style=Pack(direction=COLUMN, width=200)
-        )
-        self.uid_label = toga.Label(text="UID: ", style=Pack(margin=(5, 0)))
-        self.uid_info = toga.TextInput(on_confirm=self._on_preview_uid_confirm, style=Pack(margin=(5, 0)))
-        self.nat1_label = toga.Label(text="  Nation: ", style=Pack(margin=(5, 0)))
-        self.nat1_info = toga.TextInput(style=Pack(width=50, margin=(5, 0)))
-        self.nat2_label = toga.Label(text="  2nd Nation: ", style=Pack(margin=(5, 0)))
-        self.nat2_info = toga.TextInput(style=Pack(width=50, margin=(5, 0)))
-        self.name_label = toga.Label(text="  Player Name: ", style=Pack(margin=(5, 0)))
-        self.name_info = toga.TextInput(style=Pack(margin=(5, 0), flex=1))
-        row_box1 = toga.Box(
-            children=[self.uid_label, self.uid_info, self.nat1_label, self.nat1_info, self.nat2_label, self.nat2_info, self.name_label, self.name_info],
-            style=Pack(direction=ROW)
-        )
-        self.hair_label = toga.Label(text="Hair: ", style=Pack(margin=(5, 0)))
-        self.hair_info = toga.TextInput(style=Pack(width=50, margin=(5, 0)))
-        self.hair_color_label = toga.Label(text="  Hair Color: ", style=Pack(margin=(5, 0)))
-        self.hair_color_info = toga.TextInput(style=Pack(width=50, margin=(5, 0)))
-        self.ethnicity_label = toga.Label(text="  Ethnicity Code: ", style=Pack(margin=(5, 0)))
-        self.ethnicity_info = toga.TextInput(style=Pack(width=50, margin=(5, 0)))
-        self.skin_label = toga.Label(text="  Skin Code: ", style=Pack(margin=(5, 0)))
-        self.skin_info = toga.TextInput(style=Pack(width=50, margin=(5, 0)))
-        self.isNewGAN_label = toga.Label(text="  isNewGAN: ", style=Pack(margin=(5, 0)))
-        self.isNewGAN_info = toga.TextInput(style=Pack(width=50, margin=(5, 0)))
-        row_box2 = toga.Box(
-            children=[self.hair_label, self.hair_info, self.hair_color_label, self.hair_color_info, self.ethnicity_label, self.ethnicity_info, self.skin_label, self.skin_info, self.isNewGAN_label, self.isNewGAN_info],
-            style=Pack(direction=ROW)
-        )
-        self.club_label = toga.Label(text="Club: ", style=Pack(margin=(5, 0)))
-        self.club_info = toga.TextInput(style=Pack(margin=(5, 0), flex=1))
-        self.age_label = toga.Label(text="  Age: ", style=Pack(margin=(5, 0)))
-        self.age_info = toga.TextInput(style=Pack(margin=(5, 0)))
-        self.height_label = toga.Label(text="  Height: ", style=Pack(margin=(5, 0)))
-        self.height_info = toga.TextInput(style=Pack(margin=(5, 0)))
-        self.weight_label = toga.Label(text="  Weight: ", style=Pack(margin=(5, 0)))
-        self.weight_info = toga.TextInput(style=Pack(margin=(5, 0)))
-        row_box3 = toga.Box(
-            children=[self.club_label, self.club_info, self.age_label, self.age_info, self.height_label, self.height_info, self.weight_label, self.weight_info],
-            style=Pack(direction=ROW)
-        )
-        self.img_input = toga.TextInput(placeholder="Image to replace...", style=Pack(margin=5, flex=1))
-        self.img_button = toga.Button(
-            text="Browse",
-            on_press=self._action_open_file_dialog,
-            style=Pack(margin=5)
-        )
-        self.replace_it_button = toga.Button(
-            text="Replace it",
-            on_press=self._replace_it,
-            style=Pack(margin=5)
-        )
-        row_box4 = toga.Box(
-            children=[self.img_input, self.img_button, self.replace_it_button],
-            style=Pack(direction=ROW, margin=5)
-        )
-        detail_box = toga.Box(
-            children=[row_box1, row_box2, row_box3, toga.Divider(), row_box4],
-            style=Pack(direction=COLUMN, margin=5, flex=1)
-        )
-        self.viewer_box = toga.Box(
-            children=[preview_box, detail_box],
-            style=Pack(direction=ROW, flex=1)
-        )
-        self.main_tab_box.add(self.viewer_box)
+        # Add UI components for "Viewer Box"（拆分至 PlayerViewer）
+        self.viewer = PlayerViewer(self.app, self)
+        self.main_tab_box.add(self.viewer.viewer_box)
 
     def set_btns(self, value=True):
         """
@@ -301,7 +239,7 @@ class MainTab:
             self._refresh_input_text()
             self.set_btns(True)
             self.app.profile_manager.save_config(
-                str(self.app.paths.app)+"/.user/cfg.json", 
+                self.app.profile_manager.user_path("cfg.json"),
                 self.app.profile_manager.config
             )
 
@@ -324,14 +262,13 @@ class MainTab:
                 self.dir_input.value = path_name + "/"
                 self.app.profile_manager.prf_cfg["img_dir"] = path_name + "/"
                 self.app.profile_manager.save_config(
-                    str(self.app.paths.app) + "/.user/" + self.app.profile_manager.cur_prf + ".json", 
+                    self.app.profile_manager.user_path(self.app.profile_manager.cur_prf + ".json"),
                     self.app.profile_manager.prf_cfg
                 )
                 self.set_btns(True)
             self.set_btns(True)
         except Exception:
             self.logger.error("Fatal error in main loop", exc_info=True)
-            pass
 
     async def _action_open_file_dialog(self, widget):
         try:
@@ -346,78 +283,16 @@ class MainTab:
                     self.app.profile_manager.prf_cfg["rtf"] = fname
                     self.logger.info(f"RTF file: {fname}")
                     self.app.profile_manager.save_config(
-                        str(self.app.paths.app) + "/.user/" + self.app.profile_manager.cur_prf + ".json", 
+                        self.app.profile_manager.user_path(self.app.profile_manager.cur_prf + ".json"),
                         self.app.profile_manager.prf_cfg
                     )
                     self.set_btns(True)
-            elif widget == self.img_button:
-                # 图片文件按钮触发的逻辑
-                dialog = toga.OpenFileDialog(title="Select image file", multiple_select=False, file_types=["png", "jpg", "jpeg"])
-                fname = await self.app.main_window.dialog(dialog)
-                if fname is not None:
-                    fname = str(fname)
-                    self.logger.info("Select image file...")
-                    self.img_input.value = fname
-                    self.logger.info(f"Image file: {fname}")
         except Exception:
             self.logger.error("Fatal error in main loop", exc_info=True)
-            pass
 
     def update_mode_info_by_selection(self, widget):
         self.mode_info_label.text = self.app.mode_info.get(widget.value, "Unknown mode")
         self.logger.debug(f"Updating mode info label: {self.app.mode_info.get(widget.value, 'Unknown mode')}")
-
-    async def _validate_rtf_file(self, rtf_path, rtf_parser):
-        try:
-            # 验证RTF文件格式
-            if not rtf_parser.check_rtf_valid(rtf_path):
-                await self.app.throw_error("The RTF file is invalid!")
-                return False
-        except FileNotFoundError:
-            self.logger.error(f"RTF file doesn't exist: {rtf_path}")
-            await self.app.throw_error("The RTF file doesn't exist!")
-            return False
-        except PermissionError:
-            self.logger.error(f"Permission denied to access RTF file: {rtf_path}")
-            await self.app.throw_error("Permission denied to access the RTF file!")
-            return False
-        except Exception as e:
-            self.logger.error(f"Error while validating RTF file: {e}")
-            await self.app.throw_error(f"Error while validating RTF file: {e}")
-            return False
-        return True
-
-    async def _validate_image_directory(self, img_dir):
-        if not os.path.isdir(img_dir):
-            await self.app.throw_error("The image directory doesn't exist!")
-            self.app.profile_manager.prf_cfg['img_dir'] = ''
-            self.set_btns()
-            return False
-        # 检查图像目录是否包含所有需要的子文件夹
-        img_dirs = set()
-        for entry in os.scandir(img_dir):
-            if entry.is_dir():
-                img_dirs.add(entry.name)
-        for fp_dir in self.app.facepack_dirs:
-            if fp_dir not in img_dirs:
-                # 询问用户是否要创建缺失的目录
-                self.logger.info(f"Folder '{fp_dir}' is missing in the image directory")
-                dialog = toga.QuestionDialog("Missing Directory", f"Folder '{fp_dir}' is missing in the image directory. Do you want to create it and continue?")
-                user_choose = await self.app.main_window.dialog(dialog)
-                if user_choose:
-                    try:
-                        os.makedirs(os.path.join(img_dir, fp_dir), exist_ok=True)
-                        self.logger.info(f"Created directory: {fp_dir}")
-                        continue
-                    except Exception as e:
-                        await self.app.throw_error(f"Failed to create directory {fp_dir}: {e}")
-                        return False
-                else:
-                    # 用户选择不创建目录，显示提示错误对话框并返回False
-                    self.logger.error(f"Folder '{fp_dir}' is missing in the image directory, and user chose not to create it.")
-                    await self.app.throw_error(f"Folder {fp_dir} is missing in the image directory")
-                    return False
-        return True
 
     async def _replace_faces(self, widget):
         self.logger.info("Start Replace Faces")
@@ -436,73 +311,19 @@ class MainTab:
         self.logger.info(f"img_dir: {img_dir}")
         self.logger.info(f"profile: {profile}")
         self.logger.info(f"mode: {mode}")
-        # 创建并启动主任务
-        self._replace_task = asyncio.create_task(
-            self._execute_replace_faces(rtf, img_dir, profile, mode),
-            name="replace_faces_task"
+        # 执行主流程（取消通过 threading.Event 传导到工作线程）
+        result = await self.replace_service.run(
+            rtf, img_dir, profile, mode,
+            filter_newgan=self.isNewGAN.value,
+            allow_duplicates=self.allow_duplicates.value,
+            save_backup=self.save_backup.value,
+            on_progress=self._update_progress,
         )
-        try:
-            # 等待任务完成
-            await self._replace_task
-        except asyncio.CancelledError:
-            self.logger.info("Replace faces task was cancelled")
-            self.status_label.text = "Cancelled"
-        except Exception as e:
-            self.logger.error(f"Error in replace faces task: {e}")
-            await self.app.throw_error(f"Error during face replacement: {e}")
-        finally:
-            # 清理任务引用
-            self._replace_task = None
-            self._cleanup_after_replace()
-
-    async def _execute_replace_faces(self, rtf, img_dir, profile, mode):
-        """执行头像替换的核心逻辑"""
-        try:
-            # 步骤1: 验证RTF文件
-            await self._update_progress("Validating RTF file...", 0)
-            rtf_parser = RtfParser()
-            if not await self._validate_rtf_file(rtf, rtf_parser):
-                self.app.profile_manager.prf_cfg['rtf'] = ''
-                self.rtf_input.value = ''
-                return
-            await asyncio.sleep(0.01)
-            # 步骤2: 验证图片目录
-            await self._update_progress("Validating image directory...", 10)
-            if not await self._validate_image_directory(img_dir):
-                return
-            await asyncio.sleep(0.01)
-            # 步骤3: 解析RTF文件 (放到线程池中执行)
-            await self._update_progress("Parsing RTF file...", 20)
-            loop = asyncio.get_event_loop()
-            self.rtf_data = await loop.run_in_executor(None, self._parse_rtf_file, rtf, rtf_parser, self.isNewGAN.value)
-            if self.rtf_data is None:
-                return
-            await asyncio.sleep(0.01)
-            # 步骤4: 生成映射数据 (放到线程池中执行)
-            await self._update_progress("Mapping player to image...", 40)
-            loop = asyncio.get_event_loop()
-            self.mapping_data = await loop.run_in_executor(None, self._generate_mapping_data, img_dir, self.rtf_data, mode, self.allow_duplicates.value)
-            if self.mapping_data is None:
-                return
-            await asyncio.sleep(0.01)
-            # 步骤5: 生成config.xml文件 (放到线程池中执行)
-            await self._update_progress("Generating config.xml...", 80)
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, self._generate_config_xml, self.mapping_data, self.app.profile_manager.prf_cfg["img_dir"], self.app.profile_manager.root_dir, self.app.profile_manager.logger, self.save_backup.value)
-            if not result:
-                return
-            await asyncio.sleep(0.01)
-            # 步骤6: 保存元数据
-            await self._update_progress("Saving profile metadata...", 90)
-            await self._save_profile_metadata(profile)
-            await asyncio.sleep(0.01)
-            # 完成
-            await self._update_progress("Finished! :)", 100)
-            await asyncio.sleep(0.01)
+        if result == "finished":
             await self.app.show_info("Finished! :)")
-        except Exception as e:
-            self.logger.error(f"Error in execute_replace_faces: {e}")
-            raise
+        elif result == "cancelled":
+            self.status_label.text = "Cancelled"
+        self._cleanup_after_replace()
 
     def _cleanup_after_replace(self):
         """清理替换任务完成后的UI状态"""
@@ -510,179 +331,14 @@ class MainTab:
         self.cancel_button.style.update(visibility="hidden")
         self.set_btns(True)
         self.progress_bar.stop()
-    async def _update_progress(self, status, value):
+
+    def _update_progress(self, status, value):
         """更新进度条和状态标签的辅助方法"""
         self.status_label.text = status
         self.progress_bar.value = value
-        await asyncio.sleep(0.01)
-
-    def _parse_rtf_file(self, rtf_path, rtf_parser, filter_newgan):
-        """解析RTF文件"""
-        try:
-            return rtf_parser.parse_rtf(rtf_path, filter_newgan)
-        except FileNotFoundError:
-            self.logger.error("RTF file not found")
-        except UnicodeDecodeError:
-            self.logger.error("Encoding error in RTF file")
-        except Exception as e:
-            self.logger.error(f"Error parsing RTF file: {e}")
-        return None
-
-    def _generate_mapping_data(self, img_dir, rtf_data, mode, allow_duplicates):
-        """生成映射数据"""
-        try:
-            return FaceMapper(img_dir, self.app.profile_manager).generate_mapping(
-                rtf_data, mode, allow_duplicates
-            )
-        except Exception as e:
-            self.logger.error(f"Error mapping player to image: {e}")
-            return None
-
-    def _generate_config_xml(self, mapping_data, img_dir, root_dir, logger, save_backup):
-        """生成配置文件"""
-        try:
-            xml_parser = XmlParser()
-            xml_parser.write_xml(mapping_data, img_dir, root_dir, logger, save_backup)
-            return True
-        except FileNotFoundError:
-            self.logger.error("Config_template file not found")
-        except Exception as e:
-            self.logger.error(f"Error while writing XML: {e}")
-        return False
-
-    async def _save_profile_metadata(self, profile):
-        """保存配置文件元数据"""
-        try:
-            self.app.profile_manager.save_config(
-                str(self.app.paths.app) + "/.user/" + profile + ".json",
-                self.app.profile_manager.prf_cfg
-            )
-            return True
-        except Exception as e:
-            self.logger.error(f"Error saving profile metadata: {e}")
-            await self.app.throw_error(f"Error saving profile: {e}")
-            return False
 
     async def _cancel_replace_faces(self, widget):
-        """取消正在进行的替换任务"""
-        if hasattr(self, '_replace_task') and self._replace_task:
-            self._replace_task.cancel()
-            try:
-                await self._replace_task
-            except asyncio.CancelledError:
-                self.logger.info("Replace faces task cancelled successfully")
-            self._replace_task = None
-            self._cleanup_after_replace()
-
-    def _on_preview_uid_confirm(self, widget, **kwargs):
-        uid = self.uid_info.value.strip()
-        if not uid:
-            self.logger.warning("The UID to be previewed is empty")
-            return
-        self.logger.info(f"Previewing UID: {uid}")
-        # 重置显示内容
-        self.img_path.text = "Image Path: ...\\..."
-        self.rep_img.image = toga.Image("resources/favicon-400×400.png")
-        ethnicity = None
-        image_name = None
-        # 首先在 mapping_data 中查找
-        if hasattr(self, 'mapping_data') and self.mapping_data:
-            if isinstance(self.mapping_data, list) and len(self.mapping_data) > 0:
-                mapped_player = next((p for p in self.mapping_data if p and len(p) > 0 and (p[0] == uid or p[0] == "r-" + uid)), None)
-                if mapped_player:
-                    # mapping_data format: [uid, ethnicity, image_filename]
-                    self.uid_info.value = mapped_player[0]
-                    ethnicity = mapped_player[1]
-                    image_name = mapped_player[2]
-                    self.img_path.text = f"{ethnicity}\\{image_name}"
-        # 如果在 mapping_data 中未找到，则从 XML 文件中查找
-        if ethnicity is None or image_name is None:
-            self.logger.info(f"UID {uid} not found in mapping_data, checking XML file")
-            xml_parser = XmlParser()
-            img_path = xml_parser.get_imgpath_from_uid(
-                os.path.join(self.app.profile_manager.prf_cfg["img_dir"], "config.xml"), 
-                uid
-            )
-            if img_path:
-                # 解析图片路径 (格式: "ethnicity/image_name")
-                path_parts = img_path.split("/")
-                if len(path_parts) >= 2:
-                    ethnicity = path_parts[0]
-                    image_name = path_parts[1]
-                    # 更新显示的图片路径
-                    self.img_path.text = f"{ethnicity}\\{image_name}"
-                else:
-                    self.logger.warning(f"Invalid image path format for UID {uid}: {img_path}")
-            else:
-                self.logger.warning(f"UID {uid} not found in config.xml file")
-        # 如果找到了种族和图片名称，则加载图片
-        if ethnicity is not None and image_name is not None:
-            # 构建完整的图片文件路径并尝试加载图片
-            self.logger.info(f"Loading image for UID {uid}: {ethnicity}/{image_name}")
-            img_base = os.path.join(self.app.profile_manager.prf_cfg['img_dir'], ethnicity, image_name)
-            image_found = False
-            for ext in ['.png', '.jpg', '.jpeg']:
-                image_file = img_base + ext
-                if os.path.isfile(image_file):
-                    self.rep_img.image = toga.Image(image_file)
-                    image_found = True
-                    break
-            if not image_found:
-                self.logger.warning(f"Image file not found for UID {uid}")
-                self.rep_img.image = toga.Image("resources/favicon-400×400.png")
-        # 获取球员详细信息从 rtf_data
-        if hasattr(self, 'rtf_data') and self.rtf_data:
-            # Each list in rtf_data: [UID, primary_nat, sec_nat, name, hair_length, hair_color, ethnicity_code, ...]
-            player = next((p for p in self.rtf_data if p and len(p) > 0 and (p[0] == uid or p[0] == "r-" + uid)), None)
-            if player:
-                # [0]UID, [1]primary_nat, [2]sec_nat, [3]name, [4]hair_length, 
-                # [5]hair_color, [6]ethnicity_code, [7]skin_code, [8]face_id, [9]club, 
-                # [10]age, [11]height, [12]weight, [13]is_NewGAN
-                self.nat1_info.value = player[1] if len(player) > 1 else ''
-                self.nat2_info.value = player[2] if len(player) > 2 else ''
-                self.name_info.value = player[3] if len(player) > 3 else ''
-                self.hair_info.value = player[4] if len(player) > 4 else ''
-                self.hair_color_info.value = player[5] if len(player) > 5 else ''
-                self.ethnicity_info.value = player[6] if len(player) > 6 else ''
-                if len(player) > 7:
-                    self.skin_info.value = player[7] if len(player) > 7 else ''
-                    self.club_info.value = player[9] if len(player) > 9 else ''
-                    self.age_info.value = player[10] if len(player) > 10 else ''
-                    self.height_info.value = player[11] if len(player) > 11 else ''
-                    self.weight_info.value = player[12] if len(player) > 12 else ''
-                    self.isNewGAN_info.value = player[13] if len(player) > 13 else ''
-            else:
-                self.logger.warning(f"Player details not found in RTF data for UID: {uid}")
-        else:
-            self.logger.warning("No RTF data available for previewing player details")
-    
-    async def _replace_it(self, widget):
-        uid = self.uid_info.value.strip()
-        image_path = self.img_input.value.strip()
-        self.logger.info(f"Replacing UID: {uid} with image: {image_path}")
-        # 使用正则表达式匹配路径
-        match = re.search(r"[\\/]+([^\\/]+)[\\/]+([^\\/]+)\.(?:png|jpg|jpeg)$", image_path)
-        image = None
-        image_pack = None
-        if match:
-            image_pack = match.group(1)  # 上一级文件夹名
-            image = match.group(2)        # 头像文件名（不含扩展名）
-        if uid and image_path and image and image_pack:
-            player = [uid, image_pack, image]
-            try:
-                xml_parser = XmlParser()
-                xml_parser.single_replacement_in_xml(player, self.app.profile_manager.prf_cfg["img_dir"], self.app.profile_manager.logger, self.save_backup.value)
-                # 更新缓存中的mapping_data
-                if self.mapping_data:
-                    for p in self.mapping_data:
-                        if p and len(p) > 0 and p[0] == uid:
-                            p[1] = image_pack
-                            p[2] = image
-                            self.logger.info(f"Updated mapping data for UID: {uid}")
-                            break
-                await self.app.show_info(f"Successfully replaced UID: {uid} with {image_pack}/{image}")
-            except Exception as e:
-                await self.app.throw_error(f"Error replacing face for UID {uid}: {e}")
-        else:
-            self.logger.warning("UID or valid image path is empty")
-            await self.app.throw_error("Please provide both UID and valid image path")
+        """取消正在进行的替换任务：置位取消标志，工作线程会在映射循环中中断"""
+        if self.cancel_button.enabled:
+            self.status_label.text = "Cancelling..."
+            self.replace_service.request_cancel()

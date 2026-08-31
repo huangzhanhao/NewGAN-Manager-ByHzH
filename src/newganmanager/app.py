@@ -28,7 +28,8 @@ class NewGANManager(toga.App):
             home_page="https://github.com/huangzhanhao/NewGAN-Manager-ByHzH",
         )
 
-        self.log_manager = NewGanLogManager(self.paths.app)
+        # 运行时数据（日志、.user）写入各平台标准用户数据目录，而不是应用目录
+        self.log_manager = NewGanLogManager(self.paths.data)
         self.logger = logging.getLogger("NewGAN App")
         # Initialize instance attributes with type annotations
         # 使用类型注解初始化实例属性
@@ -119,24 +120,36 @@ class NewGANManager(toga.App):
         """
         Setup application directories and configuration files
         设置应用程序目录和配置文件
+
+        应用资源（.config 只读配置）留在应用目录；
+        用户运行时数据（.user）写入 paths.data 指向的用户数据目录。
         """
         app_path = str(self.paths.app)
+        data_path = str(self.paths.data)
         try:
-            # Create config directory and initialize user config file (if not exists)
-            # 创建配置目录并初始化用户配置文件（如不存在）
-            os.makedirs(os.path.join(app_path, ".config"), exist_ok=True)
-            user_config_path = os.path.join(app_path, ".user", "cfg.json")
+            user_dir = os.path.join(data_path, ".user")
+            os.makedirs(user_dir, exist_ok=True)
+            user_config_path = os.path.join(user_dir, "cfg.json")
             if not os.path.isfile(user_config_path):
-                default_config_path = os.path.join(
-                    app_path, ".user", "default_cfg.json"
-                )
-                shutil.copyfile(default_config_path, user_config_path)
+                old_user_dir = os.path.join(app_path, ".user")
+                if os.path.isfile(os.path.join(old_user_dir, "cfg.json")):
+                    # 从旧版布局（应用目录下的 .user）迁移用户数据
+                    shutil.copytree(old_user_dir, user_dir, dirs_exist_ok=True)
+                    self.logger.info(f"Migrated user data from {old_user_dir} to {user_dir}")
+                else:
+                    # 首次运行：从应用目录复制默认配置模板
+                    default_config_path = os.path.join(
+                        app_path, ".user", "default_cfg.json"
+                    )
+                    shutil.copyfile(default_config_path, user_config_path)
 
             # Load current profile and migrate old config
             # 加载当前配置文件并迁移旧版配置
             self.logger.info("Loading current profile")
             self.profile_manager = ProfileManager(
-                ConfigManager().get_latest_prf(user_config_path), app_path
+                ConfigManager().get_latest_prf(user_config_path),
+                app_path,
+                data_path,
             )
             self.profile_manager.migrate_config()
         except Exception as e:

@@ -14,7 +14,8 @@ class LogTab:
         self.logger = logging.getLogger("NewGAN App")
         self.log_store = []  # Store log records for filtering 存储日志记录用于筛选
         self.max_log_store = 10000  # Max logs to keep in memory 内存中最大日志数量
-        self.log_file_path = str(app.paths.app) + "/newgan.log"  # 日志文件路径
+        # 日志文件路径（日志管理器已指向用户数据目录）
+        self.log_file_path = app.log_manager.log_file
 
         # Setup top row with label, isOnly switch, log level selector, open file button, and clear button
         # 设置顶部行包含标签、isOnly开关、日志级别选择器、打开文件按钮和清除按钮
