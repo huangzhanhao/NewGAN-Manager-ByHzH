@@ -4,15 +4,16 @@ import toga
 from toga.style import Pack
 from travertino.constants import COLUMN, ROW
 
-from .app_replace_service import ReplaceFacesService
 from .app_viewer import PlayerViewer
 from .core.SourceSelection import SourceSelection
+from .services.replace_service import ReplaceFacesService
 
 
 class MainTab:
     """主标签页：Profile 管理、路径选择、模式与开关、替换执行入口
 
-    业务编排委托给 ReplaceFacesService，底部球员预览/单人换脸委托给 PlayerViewer。
+    业务编排委托给 ProfileService / ReplaceFacesService，
+    底部球员预览/单人换脸委托给 PlayerViewer。
     """
 
     def __init__(self, app):
@@ -21,7 +22,13 @@ class MainTab:
         self.main_tab_box = toga.Box(style=Pack(direction=COLUMN, margin=10))
 
         # 替换流程控制器（持有最近一次 rtf_data / mapping_data 供 Viewer 读取）
-        self.replace_service = ReplaceFacesService(app)
+        self.replace_service = ReplaceFacesService(
+            self.app.profile_manager,
+            self.app.facepack_dirs,
+            logger=self.logger,
+            on_error=self.app.throw_error,
+            ask_confirm=self.app.ask_confirm,
+        )
 
         # Create UI sections with specified label width
         label_width = 110
@@ -56,7 +63,7 @@ class MainTab:
         dir_label = toga.Label(text="Images Directory: ", style=Pack(width=label_width, margin=5))
         self.dir_input = toga.TextInput(
             readonly=True,
-            value=self.app.profile_manager.prf_cfg['img_dir'],
+            value=self.app.profile_manager.cur_group or "",
             style=Pack(margin=5, flex=1)
         )
         self.dir_button = toga.Button(
@@ -75,7 +82,7 @@ class MainTab:
         rtf_label = toga.Label(text="RTF File: ", style=Pack(width=label_width, margin=5))
         self.rtf_input = toga.TextInput(
             readonly=True,
-            value=self.app.profile_manager.prf_cfg['rtf'],
+            value=self.app.profile_manager.get_cur_rtf(),
             style=Pack(margin=5, flex=1)
         )
         self.rtf_button = toga.Button(
@@ -164,93 +171,90 @@ class MainTab:
 
     def set_btns(self, value=True):
         """
-        根据当前配置文件状态和输入设置来设置按钮的启用状态
-        Set button enabled states based on current profile status and input settings
+        根据当前 Profile / 当前组状态设置按钮启用状态。
 
-        此方法控制界面中三个主要按钮的启用状态:
-        1. Replace Faces 按钮 - 执行头像替换操作
-        2. Browse 按钮 (图片目录) - 选择图片目录
-        3. Browse 按钮 (RTF文件) - 选择RTF文件
-
-        按钮启用逻辑:
-        - 如果当前配置文件为 "No Profile"，则所有按钮都禁用
-        - 如果图片目录或RTF文件路径为空，则只能启用浏览按钮，禁用执行按钮
-        - 其他情况下，根据传入的value参数设置所有按钮的启用状态
+        规则:
+        - "No Profile"（无档）→ 全部按钮禁用
+        - 有档无组（未选过头像包目录）→ 仅目录 Browse 可用（选择新目录自动建组）
+        - 有组但无 RTF → 目录/RTF Browse 可用，替换按钮禁用
+        - 条件齐全 → 按 value 设置全部按钮
 
         Args:
             value (bool): 按钮的启用状态，默认为True
-                         Button enabled state, default is True
         """
         if not all([self.replace_faces_button, self.dir_button, self.rtf_button]):
             return
-        if self.app.profile_manager and self.app.profile_manager.cur_prf == "No Profile":
-            # 当前为"No Profile"配置文件时，禁用所有按钮
+        pm = self.app.profile_manager
+        if not pm or pm.cur_prf == "No Profile":
             self.replace_faces_button.enabled = False
             self.dir_button.enabled = False
             self.rtf_button.enabled = False
-        elif self.app.profile_manager and (
-            self.app.profile_manager.prf_cfg.get("img_dir", "") == ""
-            or self.app.profile_manager.prf_cfg.get("rtf", "") == ""
-        ):
-            # 当前配置文件缺少必要路径信息时，禁用执行按钮，启用浏览按钮
+        elif not pm.cur_group:
+            # 有档但还没有任何组：只能选择头像包目录（会自动建组）
+            self.replace_faces_button.enabled = False
+            self.dir_button.enabled = value
+            self.rtf_button.enabled = False
+        elif not pm.get_cur_rtf():
+            # 有组但缺少该组的 RTF 名单
             self.replace_faces_button.enabled = False
             self.dir_button.enabled = value
             self.rtf_button.enabled = value
         else:
-            # 所有条件满足时，根据value参数设置所有按钮状态
             self.replace_faces_button.enabled = value
             self.dir_button.enabled = value
             self.rtf_button.enabled = value
 
     def _create_profile(self, widget):
         name = self.create_input.value
-        if not name or not name.strip():
-            self.app.throw_error("The Profile is Null!")
-            return
         try:
-            self.app.profile_manager.create_profile(name)
-            self.profile_list.add_item(name)
-            self.profile_list.value = name
-            self.create_input.value = None
-            self._refresh_input_text(True)
-            self.set_btns(True)
+            if not self.app.profile_service.create_profile(name):
+                self.app.run_async(self.app.throw_error("The Profile is Null!"))
+                return
         except Exception as e:
             self.logger.error(f"Error while creating profile: {e}")
-            self.app.throw_error(f"Error creating profile: {e}")
+            self.app.run_async(self.app.throw_error(f"Error creating profile: {e}"))
+            return
+        self.profile_list.add_item(name)
+        self.profile_list.value = name
+        self.create_input.value = None
+        self._refresh_input_text(True)
+        self.set_btns(True)
+        self.app.profile_tab.refresh()
 
     def _delete_profile(self, widget):
         prf = self.profile_list.value
-        result = self.app.profile_manager.delete_profile(prf)
-        if not result:
-            self.app.throw_error("Can't delete 'No Profile'")
+        if not self.app.profile_service.delete_profile(prf):
+            self.app.run_async(self.app.throw_error("Can't delete 'No Profile'"))
             return
         self.profile_list.remove_item(prf)
         self.profile_list.value = "No Profile"
         self._refresh_input_text(clear=True)
-        self.set_btns(False)
+        self.set_btns(True)
+        self.app.profile_tab.refresh()
 
     def _set_profile_status(self, e):
         self.logger.info(f"switch profile: {e.value}")
         if e.value is None:
             self.logger.info(f"catch none {self.app.profile_manager.cur_prf}")
-        else:
-            name = e.value
-            self.app.profile_manager.load_profile(name)
-            self._refresh_input_text()
-            self.set_btns(True)
-            self.app.profile_manager.save_config(
-                self.app.profile_manager.user_path("cfg.json"),
-                self.app.profile_manager.config
-            )
+            return
+        self.app.profile_service.switch_profile(e.value)
+        self._refresh_input_text()
+        self.set_btns(True)
+        self.app.profile_tab.refresh()
 
     def _refresh_input_text(self, clear=False):
         if clear:
             self.dir_input.value = None
             self.rtf_input.value = None
         else:
-            self.dir_input.value = self.app.profile_manager.prf_cfg['img_dir']
-            self.rtf_input.value = self.app.profile_manager.prf_cfg['rtf']
+            self.dir_input.value = self.app.profile_manager.cur_group or ""
+            self.rtf_input.value = self.app.profile_manager.get_cur_rtf()
         self.logger.debug(f"Refresh InputText. Dir_input: {self.dir_input.value}, Rtf_input: {self.rtf_input.value}")
+
+    def refresh(self):
+        """刷新 Main 标签页输入显示与按钮状态（Profile / 组变化后调用）"""
+        self._refresh_input_text()
+        self.set_btns(True)
 
     async def _action_select_folder_dialog(self, widget):
         self.logger.info("Select images folder...")
@@ -259,13 +263,10 @@ class MainTab:
             path_name = await self.app.main_window.dialog(dialog)
             if path_name:
                 path_name = str(path_name)
-                self.dir_input.value = path_name + "/"
-                self.app.profile_manager.prf_cfg["img_dir"] = path_name + "/"
-                self.app.profile_manager.save_config(
-                    self.app.profile_manager.user_path(self.app.profile_manager.cur_prf + ".json"),
-                    self.app.profile_manager.prf_cfg
-                )
+                self.app.profile_service.select_image_directory(path_name)  # 新目录自动建组并设为当前组
+                self._refresh_input_text()
                 self.set_btns(True)
+                self.app.profile_tab.refresh()
             self.set_btns(True)
         except Exception:
             self.logger.error("Fatal error in main loop", exc_info=True)
@@ -279,14 +280,11 @@ class MainTab:
                 if fname is not None:
                     fname = str(fname)
                     self.logger.info("Select RTF file...")
-                    self.rtf_input.value = fname
-                    self.app.profile_manager.prf_cfg["rtf"] = fname
+                    if self.app.profile_service.set_current_rtf(fname):
+                        self._refresh_input_text()
+                        self.set_btns(True)
+                        self.app.profile_tab.refresh()
                     self.logger.info(f"RTF file: {fname}")
-                    self.app.profile_manager.save_config(
-                        self.app.profile_manager.user_path(self.app.profile_manager.cur_prf + ".json"),
-                        self.app.profile_manager.prf_cfg
-                    )
-                    self.set_btns(True)
         except Exception:
             self.logger.error("Fatal error in main loop", exc_info=True)
 
@@ -302,10 +300,11 @@ class MainTab:
         self.progress_bar.value = 0
         self.status_label.text = ''
         self.set_btns(False)
-        # 获取配置参数
-        rtf = self.app.profile_manager.prf_cfg['rtf']
-        img_dir = self.app.profile_manager.prf_cfg['img_dir']
-        profile = self.app.profile_manager.cur_prf
+        # 获取配置参数（当前组的 rtf / img_dir）
+        pm = self.app.profile_manager
+        rtf = pm.get_cur_rtf()
+        img_dir = pm.cur_group
+        profile = pm.cur_prf
         mode = str(self.mode_selection.value) if self.mode_selection.value else "Preserve"
         self.logger.info(f"rtf: {rtf}")
         self.logger.info(f"img_dir: {img_dir}")
@@ -314,7 +313,7 @@ class MainTab:
         # 执行主流程（取消通过 threading.Event 传导到工作线程）
         result = await self.replace_service.run(
             rtf, img_dir, profile, mode,
-            filter_newgan=self.isNewGAN.value,
+            filter_newgen=self.isNewGAN.value,
             allow_duplicates=self.allow_duplicates.value,
             save_backup=self.save_backup.value,
             on_progress=self._update_progress,

@@ -7,23 +7,30 @@
 
 ### Core Modules / 核心模块（`core/`）
 
-#### ConfigManager（`core/ConfigManager.py`）
-所有配置读写的基类，JSON UTF-8，`ensure_ascii=False`。
+#### ProfileManager（`core/ProfileManager.py`）
+内置 JSON 读写工具（原 `ConfigManager` 已并入，`core/ConfigManager.py` 已删除）。
+一个 Profile = 一个存档的一套独立配置，内部含多个「组」。**组以头像包目录（img_dir）为唯一标识**，
+每组包含该目录对应的 RTF 名单与 config.xml 快照。
+
+JSON 工具（静态方法）：
 - `load_config(path)` — 读 JSON，文件缺失抛 `FileNotFoundError`
-- `save_config(path, data)` — 写 JSON
+- `save_config(path, data)` — 写 JSON（UTF-8、`ensure_ascii=False`、缩进 2）
 - `get_latest_prf(path)` — 从 `.user/cfg.json` 的 `Profile` 字典中取值为 `true` 的名字（激活 Profile）
 
-#### ProfileManager（`core/ProfileManager.py`）— 继承 ConfigManager
-一个 Profile = 一套「头像包目录 + RTF + config.xml 快照」。
-- `__init__(name, root_dir)` — 加载 `.user/cfg.json`、`.user/<name>.json`、`.config/eth_cfg.json`
-- `migrate_config()` — 迁移上游旧版 `../.config/` 结构到新目录布局
-- `create_profile(name)` — 登记 Profile、建 `<name>.json`（含 `img_dir`/`rtf` 空值）、建空 `<name>.xml`
-- `delete_profile(name)` — 删除注册与文件；`No Profile` 不可删，返回 `False`
-- `load_profile(name)` — 切换激活 Profile，交换 XML 快照并更新 `cfg.json` 激活位
-- `swap_xml(deact_name, act_name, deact_img_dir, act_img_dir)` — 存旧快照、回头像包目录（两侧路径为空时静默跳过）
+Profile 管理：
+- `__init__(name, root_dir, data_dir=None)` — 加载 `.user/cfg.json`、`.user/<name>.json`、`.config/eth_cfg.json`，恢复当前组
+- `create_profile(name)` — 登记 Profile、生成 `{"cur_group": null, "groups": {}}`，并切换过去
+- `delete_profile(name)` — 删除注册、`<name>.json` 与映射备份目录；`No Profile` 不可删，返回 `False`
+- `load_profile(name)` — 先保存旧档所有组的 `config.xml` 快照，再恢复新档各组的快照，更新激活位
+
+组管理：
+- `ensure_group(img_dir)` — 新头像包目录自动建组并设为当前组（选择目录 / Replace 前调用）
+- `set_cur_group(img_dir)` / `delete_group(img_dir)` — 切换 / 删除组（删当前组时回退到剩余组的第一个）
+- `list_groups()` / `get_group_rtf(img_dir)` / `get_cur_rtf()` / `set_cur_rtf(rtf)` — 组与 RTF 读写
+- `group_xml_path(profile, img_dir)` — 组映射快照路径 `.user/<profile>/<sanitized_img_dir>.xml`
 - `get_ethnic(nation)` — 英文三字码 → 种族目录名，查 `eth_cfg.json`
 
-> 注意：写 `config.xml` 的责任已移到 `XmlParser`，`ProfileManager` 不再提供 `write_xml`。
+> 注意：写 `config.xml` 的责任在 `XmlParser`，`ProfileManager` 只负责各目录快照的保存/恢复（`load_profile` 内部完成，原 `swap_xml` 拆分后不再单独暴露）。
 
 #### RtfParser（`core/RtfParser.py`）
 - `parse_rtf(path, filter_newgan=True)` — 逐行按 `|` 切列，返回球员记录列表
@@ -76,30 +83,55 @@
 - `send_report(id)` — 经 Discord webhook 上报某 UID 当前使用的头像
 - 当前 UI 未接入（`app.py` 中的 webhook 地址已注释掉）
 
+### Services / 业务服务层（`services/`）
+
+与 UI 框架完全解耦的编排逻辑（**不 import toga**），由 UI 层构造并注入依赖：
+
+- `ProfileService` — Profile（档）与组（头像包目录）的增删切管理：
+  `create_profile` / `delete_profile` / `switch_profile` / `select_image_directory`（新目录自动建组）/
+  `set_current_rtf` / `set_current_group` / `delete_group`
+- `PlayerService` — 球员预览查询与单人换脸：
+  `find_mapped_player` / `find_xml_image` / `find_rtf_player` / `resolve_image_file` /
+  `parse_image_path` / `replace_single_face` / `update_mapping_cache`
+- `ReplaceFacesService`（`services/replace_service.py`）— 替换流程编排（见下方 Data Flow）。
+  错误提示与确认对话框通过构造注入的 `on_error` / `ask_confirm` 回调提供，UI 层传入
+  `app.throw_error` / `app.ask_confirm`
+
+分层约定：`app*.py`（UI）只负责控件、对话框与展示；业务规则收敛在 `services/`；
+数据与算法在 `core/`。
+
 ### UI / 界面层
 
 #### NewGANManager（`app.py`）— 继承 `toga.App`
 - `__init__()` — 创建 `NewGanLogManager`，声明实例属性
-- `startup()` — 装配数据 → 定义 `facepack_dirs`（14 个种族目录）与 `mode_info` → 建菜单 → 建 Main/Profile/Log 三个标签 → 显示 1000×600 主窗口
-- `_setup_application_data()` — 建 `.config/`、必要时由 `default_cfg.json` 复制 `cfg.json`、实例化 `ProfileManager` 并 `migrate_config()`
+- `startup()` — 装配数据 → 定义 `facepack_dirs`（14 个种族目录）与 `mode_info` → 建菜单 → 实例化 `ProfileService` → 建 Main/Profile/Log 三个标签 → 显示 1000×600 主窗口
+- `_setup_application_data()` — 建 `.user/`、必要时由 `default_cfg.json` 复制 `cfg.json`、实例化 `ProfileManager`
 - `_setup_menu()` — 帮助菜单：使用教程（YouTube + Bilibili）、Troubleshooting、FAQ、Discord
-- `throw_error(msg)` / `show_info(msg)` — 异步对话框，同时写日志
+- `throw_error(msg)` / `show_info(msg)` / `ask_confirm(title, msg)` — 异步对话框，同时写日志；后两者供业务层注入
 - `on_exit()` — 记录退出日志
 - `check_for_update()` — 保留但未被调用，且指向的是上游仓库
 
 #### MainTab（`app_main_tab.py`）
-- `__init__(app)` — 自上而下 5 个区块：Create Profile / Select Profile / Images Directory / RTF File / Mode + 三个开关 / Replace Faces + 进度 / Viewer
-- `set_btns(value=True)` — 按 Profile 状态与 `img_dir`/`rtf` 是否为空控制按钮可用性
-- `_create_profile` / `_delete_profile` / `_set_profile_status` / `_refresh_input_text` — Profile 增删切与输入框回填
-- `_action_select_folder_dialog` / `_action_open_file_dialog` — 目录、RTF、单图选择，结果立即写回 Profile JSON
+- `__init__(app)` — 自上而下区块：Create/Select/Delete Profile、Images Directory（当前组）、RTF File（当前组）、Mode + 三个开关、Replace Faces + 进度、Viewer；构造 `ReplaceFacesService` 并向其注入 `throw_error` / `ask_confirm`
+- `set_btns(value=True)` — 按「档 → 当前组 → 当前组 RTF」三级状态控制按钮可用性
+- `refresh()` — 刷新输入显示与按钮状态（Profile / 组变化后由各回调调用）
+- `_create_profile` / `_delete_profile` / `_set_profile_status` — 委托 `ProfileService` 执行业务，操作后联动 `ProfileTab.refresh()`
+- `_refresh_input_text(clear=False)` — 回填当前组的 img_dir / rtf
+- `_action_select_folder_dialog` / `_action_open_file_dialog` — 对话框交互，业务交给 `ProfileService.select_image_directory`（新目录自动建组）/ `set_current_rtf`
 - `update_mode_info_by_selection(widget)` — 切换模式时更新说明文字
-- `_validate_rtf_file` / `_validate_image_directory` — RTF 有效性；头像包目录完整性（缺失时询问是否创建）
-- `_replace_faces` → `_execute_replace_faces` — 见下方流程
-- `_parse_rtf_file` / `_generate_mapping_data` / `_generate_config_xml` / `_save_profile_metadata` — 各阶段的具体实现，均由线程池调用
+- `_replace_faces` — 读取当前组参数，委托 `ReplaceFacesService.run` 执行（见下方流程）
 - `_update_progress(status, value)` / `_cleanup_after_replace` — 进度条、状态文字与收尾
-- `_cancel_replace_faces` — 取消 `asyncio.Task`
-- `_on_preview_uid_confirm` — 按 UID 预览：先查 `mapping_data`，未命中再查 `config.xml`，加载 `<种族>/<图片>.png|jpg|jpeg`，并从 `rtf_data` 回填球员信息
-- `_replace_it` — 从所选图片路径用正则反推 `<上级目录>/<文件名>`，调用 `single_replacement_in_xml` 并同步 `mapping_data` 缓存
+- `_cancel_replace_faces` — 请求 `ReplaceFacesService` 置位取消标志，工作线程逐球员中断
+
+#### ProfileTab（`app_profile_tab.py`）
+- `__init__(app)` — 显示当前 Profile 名 + 组列表（每个组一行：img_dir / rtf / Select / Delete）
+- `refresh()` — 按当前 Profile 重建组列表（无组时提示从 Main 标签选择目录）
+- `_select_group(img_dir)` / `_delete_group(img_dir)` — 组管理业务委托 `ProfileService`，操作后联动刷新 Main 标签
+
+#### PlayerViewer（`app_viewer.py`）
+- 底部预览区：按 UID 查询头像与球员资料、单人换脸，业务委托 `PlayerService`
+- `_on_preview_uid_confirm` — 依次查 `mapping_data` → 当前组 `config.xml` → 加载图片 → 回填 RTF 球员信息
+- `_replace_it` — 解析所选图片路径 → `PlayerService.replace_single_face` 写 `config.xml` → 同步内存映射缓存
 
 #### LogTab（`app_log_tab.py`）
 - `__init__(app)` — 顶部工具行（级别下拉、`only show this level` 开关、Open Log File、Clear Logs）+ 只读文本区
@@ -114,14 +146,14 @@
 
 ```text
 MainTab._replace_faces
-  └─ asyncio.create_task(_execute_replace_faces)          可 Cancel
-       0%  RtfParser.check_rtf_valid            ← 无效则清空 rtf 配置并终止
-       10% MainTab._validate_image_directory    ← 缺失目录询问创建
+  └─ ReplaceFacesService.run(当前组的 rtf/img_dir + profile + mode)  可 Cancel
+       0%  RtfParser.check_rtf_valid            ← 无效则终止
+       10% ReplaceFacesService._validate_image_directory   ← 缺失目录询问创建
        20% RtfParser.parse_rtf (线程池)          →  rtf_data
             └─ translate_rtf_data_to_english    ←  中文 RTF 必走
        40% FaceMapper.generate_mapping (线程池)  →  mapping_data = [[uid, 种族, 图片名], ...]
-       80% XmlParser.write_xml (线程池)          →  <img_dir>/config.xml（可选先备份）
-       90% ProfileManager.save_config            →  <app>/.user/<Profile>.json
+       80% XmlParser.write_xml (线程池)          →  当前组 img_dir/config.xml（可选先备份）
+       90% ProfileManager.save_config            →  .user/<Profile>.json（含各组的 rtf 等元数据）
       100% show_info("Finished! :)")
 ```
 
@@ -136,23 +168,27 @@ MainTab._replace_faces
 
 ```plantuml
 @startuml
-class ConfigManager {
-  +load_config(path: str): dict
-  +save_config(path: str, data: dict): None
-  +get_latest_prf(path: str): str or None
-}
-
 class ProfileManager {
   +cur_prf: str
+  +cur_group: str or None
   +root_dir: str
   +config: dict
   +prf_cfg: dict
   +eth_cfg: dict
-  +migrate_config(): None
+  +{static} load_config(path: str): dict
+  +{static} save_config(path: str, data: dict): None
+  +{static} get_latest_prf(path: str): str or None
   +create_profile(name: str): None
   +delete_profile(name: str): bool
   +load_profile(name: str): None
-  +swap_xml(deact_name, act_name, deact_img_dir, act_img_dir): None
+  +ensure_group(img_dir: str): str or None
+  +set_cur_group(img_dir: str): bool
+  +delete_group(img_dir: str): bool
+  +list_groups(): list
+  +get_group_rtf(img_dir: str): str
+  +get_cur_rtf(): str
+  +set_cur_rtf(rtf: str): bool
+  +group_xml_path(profile: str, img_dir: str): str
   +get_ethnic(nation: str): str or None
 }
 
@@ -209,7 +245,6 @@ class Reporter {
   +send_report(id: str): str
 }
 
-ConfigManager <|-- ProfileManager
 ProfileManager --> FaceMapper : 种族查表
 RtfParser --> FaceMapper : rtf_data
 FaceMapper --> XmlParser : 读现有映射
@@ -240,9 +275,8 @@ class NewGANManager {
 }
 
 class MainTab {
-  +rtf_data: list
-  +mapping_data: list
   +set_btns(value: bool = True)
+  +refresh()
   +_create_profile(widget)
   +_delete_profile(widget)
   +_set_profile_status(e)
@@ -250,13 +284,14 @@ class MainTab {
   +_action_select_folder_dialog(widget)
   +_action_open_file_dialog(widget)
   +update_mode_info_by_selection(widget)
-  +_validate_rtf_file(rtf_path, rtf_parser): bool
-  +_validate_image_directory(img_dir): bool
   +_replace_faces(widget)
-  +_execute_replace_faces(rtf, img_dir, profile, mode)
   +_cancel_replace_faces(widget)
-  +_on_preview_uid_confirm(widget)
-  +_replace_it(widget)
+}
+
+class ProfileTab {
+  +refresh()
+  +_select_group(img_dir)
+  +_delete_group(img_dir)
 }
 
 class LogTab {
@@ -270,14 +305,46 @@ class LogTab {
   +_clear_logs(widget)
 }
 
+class ReplaceFacesService {
+  +rtf_data: list
+  +mapping_data: list
+  +run(...): str
+  +request_cancel()
+}
+
+class ProfileService {
+  +create_profile(name): bool
+  +delete_profile(name): bool
+  +switch_profile(name): bool
+  +select_image_directory(dir): bool
+  +set_current_rtf(rtf): bool
+  +set_current_group(dir): bool
+  +delete_group(dir): bool
+}
+
+class PlayerService {
+  +find_mapped_player(uid, mapping)
+  +find_xml_image(uid)
+  +find_rtf_player(uid, rtf_data)
+  +resolve_image_file(ethnicity, image): str
+  +parse_image_path(path)
+  +replace_single_face(uid, pack, image, backup)
+  +update_mapping_cache(uid, pack, image, mapping): bool
+}
+
 NewGANManager --> MainTab : contains
+NewGANManager --> ProfileTab : contains
 NewGANManager --> LogTab : contains
 NewGANManager --> ProfileManager : uses
+NewGANManager --> ProfileService : uses
 NewGANManager --> NewGanLogManager : uses
-MainTab --> RtfParser
-MainTab --> FaceMapper
-MainTab --> XmlParser
-MainTab --> SourceSelection : Profile / Mode 下拉
+MainTab --> ReplaceFacesService : 编排
+MainTab --> ProfileService : 档/组管理
+MainTab --> ProfileTab : 联动刷新
+MainTab --> SourceSelection : Profile 下拉
+ProfileTab --> ProfileService : 组管理
+ProfileTab --> ProfileManager : 组管理
+PlayerViewer --> PlayerService : 查询/换脸
 @enduml
 ```
 
@@ -290,16 +357,17 @@ MainTab --> SourceSelection : Profile / Mode 下拉
 | `.config/eth_cfg.json` | 国籍三字码 → 种族目录（`{"Ethnics": {"ARG": "SAMed", ...}}`） | `ProfileManager.get_ethnic` |
 | `.config/nat_translation.json` | 中文国籍 → 三字码，解析中文 RTF 时使用 | `RtfParser.translate_rtf_data_to_english` |
 | `.config/config_template` | `config.xml` 头尾模板，`[players]` 为占位符 | `XmlParser.write_xml` |
-| `.user/cfg.json` | Profile 列表 + 激活位（首次运行从 `default_cfg.json` 复制） | `ConfigManager` / `ProfileManager` |
-| `.user/<Profile>.json` | 该 Profile 的 `img_dir`、`rtf`（以及历史遗留的 `imgs`、`ethnics`） | `ProfileManager`、`MainTab` |
-| `.user/<Profile>.xml` | 该 Profile 的 `config.xml` 快照，切换时与头像包目录互换 | `ProfileManager.swap_xml` |
+| `.user/cfg.json` | Profile 列表 + 激活位（首次运行从 `default_cfg.json` 复制） | `ProfileManager` |
+| `.user/<Profile>.json` | 该 Profile 的组配置：`{"cur_group": <img_dir>, "groups": {<img_dir>: {"rtf": ...}}}` | `ProfileManager`、`MainTab` |
+| `.user/<Profile>/<sanitized_img_dir>.xml` | 该档某组的 `config.xml` 快照，切换档时与头像包目录互换 | `ProfileManager.load_profile` |
 | `newgan.log` | 运行日志，10 MB × 3 | `NewGanLogManager` |
 
 ## Improvements / 待改进
 
-- **测试**：`src/tests/test_app.py` 目前只是用例骨架（全部 `pass`），需要补 RTF 解析（英文 / 中文 / 14 列 / 随机人过滤）、映射（三种模式、图片池优先级）、XML 读写与备份轮换的断言。
-- **CI**：`.github/workflows/*` 仍引用上游旧路径 `src/test_app.py`、`src/test_mapper.py`，应改为 `python -m unittest discover -s src/tests`；artifact 中的版本号也仍是 `1.4.0`，需与 `version` 文件同步。
-- **Profile 标签页**：`app.py` 中 `profile_tab` 为空 `toga.Box`，Profile 管理操作应迁出 Main 标签（分支 `TODO：ProfileTab`）。
+- **测试**：`src/tests` 目前只有测试基架，需补 ProfileManager（组增删切、多目录快照交换）、RTF 解析（英文 / 中文 / 14 列 / 随机人过滤）、映射（三种模式、图片池优先级）、XML 读写与备份轮换的断言。
+- **CI**：artifact 中的版本号需与 `version` 文件同步；补 `ruff check src/`。
 - **更新检查**：`check_for_update()` 指向上游仓库，需要改为本分支 Release 并接入菜单。
 - **报告功能**：`Reporter` 未接入 UI，webhook 地址需移入配置文件而非硬编码。
-- **路径处理**：多处使用 `str + "/..."` 拼接，建议统一为 `pathlib.Path` / `os.path.join`，以改善含空格、中文路径的兼容性。
+- **路径处理**：替换流程周边仍有 `str + "/..."` 拼接，建议统一为 `pathlib.Path` / `os.path.join`，以改善含空格、中文路径的兼容性。
+- **原子写入**：`save_config` 为直接覆盖写，进程崩溃会留下损坏 JSON；建议临时文件 + `os.replace`，`load_config` 捕获 `JSONDecodeError` 回退默认配置。
+- **切换竞态**：替换任务运行中切换 Profile 会互相覆盖 `config.xml`，建议替换期间禁用 Profile 下拉与组删除。

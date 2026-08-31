@@ -100,6 +100,9 @@ src/tests/testing_data/.user/*.xml
 # User RTF exports (personal data, never commit)
 src/newganmanager/user_rtf/
 user_rtf/
+
+# Portable user data directory (dev runtime output, never commit)
+src/newganmanager/data/
 # Keep template files
 !src/newganmanager/.user/No Profile.json
 !src/newganmanager/.user/default_cfg.json
@@ -125,9 +128,6 @@ user_rtf/
 .env.*.local
 .env.development
 .env.production
-
-# Requirements files
-requirements*.txt
 
 # Jupyter Notebook
 .ipynb_checkpoints

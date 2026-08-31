@@ -1,26 +1,46 @@
 """替换流程编排服务：验证 → 解析 RTF → 映射 → 写 config.xml → 保存元数据
 
-从 MainTab 中拆出的业务编排层。重活（解析/映射/写文件）仍放到线程池执行，
-但通过 threading.Event 实现真正的取消：Cancel 置位后，映射循环内逐球员检查
+纯业务编排，不依赖 UI 框架。错误提示 / 确认对话框通过构造注入的回调提供，
+由 UI 层（MainTab）负责实现。重活（解析/映射/写文件）放到线程池执行，
+通过 threading.Event 实现真正的取消：Cancel 置位后，映射循环内逐球员检查
 并中断，后续阶段不再执行，config.xml 不会被写入。
 """
 import asyncio
+import logging
 import os
 import threading
 
-import toga
+from ..core.FaceMapper import FaceMapper
+from ..core.RtfParser import RtfParser
+from ..core.XmlParser import XmlParser
 
-from .core.FaceMapper import FaceMapper
-from .core.RtfParser import RtfParser
-from .core.XmlParser import XmlParser
+
+async def _default_on_error(msg):
+    """默认错误回调：仅记录，不弹窗（UI 层会注入真正的对话框实现）"""
+    logging.getLogger("NewGAN App").error(msg)
+
+
+async def _default_ask_confirm(title, message) -> bool:
+    return False
 
 
 class ReplaceFacesService:
     """Replace Faces 的执行控制器，支持线程级取消"""
 
-    def __init__(self, app):
-        self.app = app
-        self.logger = app.logger
+    def __init__(self, profile_manager, facepack_dirs, logger=None,
+                 on_error=None, ask_confirm=None):
+        """
+        Args:
+            profile_manager: ProfileManager 实例（提供 root_dir、logger、元数据读写）
+            facepack_dirs: 头像包应包含的种族目录集合
+            on_error: async (msg) -> None，业务出错时提示用户
+            ask_confirm: async (title, message) -> bool，向用户确认
+        """
+        self.profile_manager = profile_manager
+        self.facepack_dirs = facepack_dirs
+        self.logger = logger or logging.getLogger("NewGAN App")
+        self._on_error = on_error or _default_on_error
+        self._ask_confirm = ask_confirm or _default_ask_confirm
         # 取消标志：UI 线程置位，工作线程在各阶段检查
         self.cancel_event = threading.Event()
         # 供 UI（Viewer 预览等）读取的最近一次结果
@@ -65,7 +85,7 @@ class ReplaceFacesService:
             # 步骤3: 解析RTF文件 (放到线程池中执行)
             on_progress("Parsing RTF file...", 20)
             self.rtf_data = await loop.run_in_executor(
-                None, self._parse_rtf_file, rtf, rtf_parser, filter_newgan)
+                None, self._parse_rtf_file, rtf, rtf_parser, filter_newgen)
             if self.rtf_data is None:
                 return "cancelled" if self.cancelled else "failed"
             # 步骤4: 生成映射数据 (放到线程池中执行，可被取消标志中断)
@@ -79,8 +99,8 @@ class ReplaceFacesService:
             on_progress("Generating config.xml...", 80)
             result = await loop.run_in_executor(
                 None, self._generate_config_xml, self.mapping_data,
-                img_dir, self.app.profile_manager.root_dir,
-                self.app.profile_manager.logger, save_backup)
+                img_dir, self.profile_manager.root_dir,
+                self.profile_manager.logger, save_backup)
             if not result:
                 return "cancelled" if self.cancelled else "failed"
             # 步骤6: 保存元数据
@@ -91,57 +111,61 @@ class ReplaceFacesService:
             return "finished"
         except Exception as e:
             self.logger.error(f"Error in replace faces task: {e}", exc_info=True)
-            await self.app.throw_error(f"Error during face replacement: {e}")
+            await self._on_error(f"Error during face replacement: {e}")
             return "failed"
 
     async def _validate_rtf_file(self, rtf_path, rtf_parser):
         try:
             # 验证RTF文件格式
             if not rtf_parser.check_rtf_valid(rtf_path):
-                await self.app.throw_error("The RTF file is invalid!")
+                await self._on_error("The RTF file is invalid!")
                 return False
         except FileNotFoundError:
             self.logger.error(f"RTF file doesn't exist: {rtf_path}")
-            await self.app.throw_error("The RTF file doesn't exist!")
+            await self._on_error("The RTF file doesn't exist!")
             return False
         except PermissionError:
             self.logger.error(f"Permission denied to access RTF file: {rtf_path}")
-            await self.app.throw_error("Permission denied to access the RTF file!")
+            await self._on_error("Permission denied to access the RTF file!")
             return False
         except Exception as e:
             self.logger.error(f"Error while validating RTF file: {e}")
-            await self.app.throw_error(f"Error while validating RTF file: {e}")
+            await self._on_error(f"Error while validating RTF file: {e}")
             return False
         return True
 
     async def _validate_image_directory(self, img_dir):
         if not os.path.isdir(img_dir):
-            await self.app.throw_error("The image directory doesn't exist!")
-            self.app.profile_manager.prf_cfg['img_dir'] = ''
+            await self._on_error("The image directory doesn't exist!")
             return False
         # 检查图像目录是否包含所有需要的子文件夹
         img_dirs = set()
         for entry in os.scandir(img_dir):
             if entry.is_dir():
                 img_dirs.add(entry.name)
-        for fp_dir in self.app.facepack_dirs:
+        for fp_dir in self.facepack_dirs:
             if fp_dir not in img_dirs:
                 # 询问用户是否要创建缺失的目录
                 self.logger.info(f"Folder '{fp_dir}' is missing in the image directory")
-                dialog = toga.QuestionDialog("Missing Directory", f"Folder '{fp_dir}' is missing in the image directory. Do you want to create it and continue?")
-                user_choose = await self.app.main_window.dialog(dialog)
+                user_choose = await self._ask_confirm(
+                    "Missing Directory",
+                    f"Folder '{fp_dir}' is missing in the image directory. "
+                    "Do you want to create it and continue?",
+                )
                 if user_choose:
                     try:
                         os.makedirs(os.path.join(img_dir, fp_dir), exist_ok=True)
                         self.logger.info(f"Created directory: {fp_dir}")
                         continue
                     except Exception as e:
-                        await self.app.throw_error(f"Failed to create directory {fp_dir}: {e}")
+                        await self._on_error(f"Failed to create directory {fp_dir}: {e}")
                         return False
                 else:
                     # 用户选择不创建目录，显示提示错误对话框并返回False
-                    self.logger.error(f"Folder '{fp_dir}' is missing in the image directory, and user chose not to create it.")
-                    await self.app.throw_error(f"Folder {fp_dir} is missing in the image directory")
+                    self.logger.error(
+                        f"Folder '{fp_dir}' is missing in the image directory, "
+                        "and user chose not to create it.")
+                    await self._on_error(f"Folder {fp_dir} is missing in the image directory")
                     return False
         return True
 
@@ -160,7 +184,7 @@ class ReplaceFacesService:
     def _generate_mapping_data(self, img_dir, rtf_data, mode, allow_duplicates):
         """生成映射数据（映射循环内响应取消标志）"""
         try:
-            return FaceMapper(img_dir, self.app.profile_manager).generate_mapping(
+            return FaceMapper(img_dir, self.profile_manager).generate_mapping(
                 rtf_data, mode, allow_duplicates, cancel_event=self.cancel_event
             )
         except Exception as e:
@@ -182,12 +206,12 @@ class ReplaceFacesService:
     async def _save_profile_metadata(self, profile):
         """保存配置文件元数据"""
         try:
-            self.app.profile_manager.save_config(
-                self.app.profile_manager.user_path(profile + ".json"),
-                self.app.profile_manager.prf_cfg
+            self.profile_manager.save_config(
+                self.profile_manager.user_path(profile + ".json"),
+                self.profile_manager.prf_cfg,
             )
             return True
         except Exception as e:
             self.logger.error(f"Error saving profile metadata: {e}")
-            await self.app.throw_error(f"Error saving profile: {e}")
+            await self._on_error(f"Error saving profile: {e}")
             return False

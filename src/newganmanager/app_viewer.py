@@ -1,17 +1,16 @@
 """底部 Viewer 区：按 UID 预览球员信息与当前头像，支持单个球员换脸
 
-从 MainTab 中拆出的 UI 组件。球员数据与映射数据由 MainTab 持有，
+UI 组件：查询与替换业务委托给 PlayerService，本类只负责展示与事件回调。
+球员数据与映射数据由 MainTab（ReplaceFacesService）持有，
 通过构造时传入的 main_tab 引用读取。
 """
 import logging
-import os
-import re
 
 import toga
 from toga.style import Pack
 from travertino.constants import COLUMN, ROW
 
-from .core.XmlParser import XmlParser
+from .services.player_service import PlayerService
 
 
 class PlayerViewer:
@@ -24,6 +23,7 @@ class PlayerViewer:
         self.app = app
         self.main_tab = main_tab
         self.logger = logging.getLogger("NewGAN App")
+        self.player_service = PlayerService(app.profile_manager, logger=self.logger)
 
         # 头像预览区
         self.rep_img = toga.ImageView(toga.Image("resources/favicon-400×400.png"), style=Pack(width=180, height=180, margin=10))
@@ -120,109 +120,81 @@ class PlayerViewer:
         if not uid:
             self.logger.warning("The UID to be previewed is empty")
             return
+        if not self.app.profile_manager.cur_group:
+            self.logger.warning("No current group selected, cannot preview")
+            return
         self.logger.info(f"Previewing UID: {uid}")
         # 重置显示内容
         self.img_path.text = "Image Path: ...\\..."
         self.rep_img.image = toga.Image("resources/favicon-400×400.png")
         ethnicity = None
         image_name = None
-        # 首先在 mapping_data 中查找
+        # 首先在最近一次批量替换的 mapping_data 中查找
         mapping_data = self.main_tab.replace_service.mapping_data
-        if mapping_data:
-            mapped_player = next((p for p in mapping_data if p and len(p) > 0 and (p[0] == uid or p[0] == "r-" + uid)), None)
-            if mapped_player:
-                # mapping_data format: [uid, ethnicity, image_filename]
-                self.uid_info.value = mapped_player[0]
-                ethnicity = mapped_player[1]
-                image_name = mapped_player[2]
-                self.img_path.text = f"{ethnicity}\\{image_name}"
-        # 如果在 mapping_data 中未找到，则从 XML 文件中查找
+        mapped_player = self.player_service.find_mapped_player(uid, mapping_data)
+        if mapped_player:
+            # mapping_data format: [uid, ethnicity, image_filename]
+            self.uid_info.value = mapped_player[0]
+            ethnicity = mapped_player[1]
+            image_name = mapped_player[2]
+            self.img_path.text = f"{ethnicity}\\{image_name}"
+        # 如果在 mapping_data 中未找到，则从当前组的 config.xml 中查找
         if ethnicity is None or image_name is None:
             self.logger.info(f"UID {uid} not found in mapping_data, checking XML file")
-            xml_parser = XmlParser()
-            img_path = xml_parser.get_imgpath_from_uid(
-                os.path.join(self.app.profile_manager.prf_cfg["img_dir"], "config.xml"),
-                uid
-            )
-            if img_path:
-                # 解析图片路径 (格式: "ethnicity/image_name")
-                path_parts = img_path.split("/")
-                if len(path_parts) >= 2:
-                    ethnicity = path_parts[0]
-                    image_name = path_parts[1]
-                    # 更新显示的图片路径
-                    self.img_path.text = f"{ethnicity}\\{image_name}"
-                else:
-                    self.logger.warning(f"Invalid image path format for UID {uid}: {img_path}")
+            xml_hit = self.player_service.find_xml_image(uid)
+            if xml_hit:
+                ethnicity, image_name = xml_hit
+                self.img_path.text = f"{ethnicity}\\{image_name}"
             else:
                 self.logger.warning(f"UID {uid} not found in config.xml file")
         # 如果找到了种族和图片名称，则加载图片
         if ethnicity is not None and image_name is not None:
-            # 构建完整的图片文件路径并尝试加载图片
             self.logger.info(f"Loading image for UID {uid}: {ethnicity}/{image_name}")
-            img_base = os.path.join(self.app.profile_manager.prf_cfg['img_dir'], ethnicity, image_name)
-            image_found = False
-            for ext in ['.png', '.jpg', '.jpeg']:
-                image_file = img_base + ext
-                if os.path.isfile(image_file):
-                    self.rep_img.image = toga.Image(image_file)
-                    image_found = True
-                    break
-            if not image_found:
+            image_file = self.player_service.resolve_image_file(ethnicity, image_name)
+            if image_file:
+                self.rep_img.image = toga.Image(image_file)
+            else:
                 self.logger.warning(f"Image file not found for UID {uid}")
                 self.rep_img.image = toga.Image("resources/favicon-400×400.png")
-        # 获取球员详细信息从 rtf_data
+        # 获取球员详细信息从最近一次解析的 rtf_data
         rtf_data = self.main_tab.replace_service.rtf_data
-        if rtf_data:
-            # Each list in rtf_data: [UID, primary_nat, sec_nat, name, hair_length, hair_color, ethnicity_code, ...]
-            player = next((p for p in rtf_data if p and len(p) > 0 and (p[0] == uid or p[0] == "r-" + uid)), None)
-            if player:
-                # [0]UID, [1]primary_nat, [2]sec_nat, [3]name, [4]hair_length,
-                # [5]hair_color, [6]ethnicity_code, [7]skin_code, [8]face_id, [9]club,
-                # [10]age, [11]height, [12]weight, [13]is_NewGAN
-                self.nat1_info.value = player[1] if len(player) > 1 else ''
-                self.nat2_info.value = player[2] if len(player) > 2 else ''
-                self.name_info.value = player[3] if len(player) > 3 else ''
-                self.hair_info.value = player[4] if len(player) > 4 else ''
-                self.hair_color_info.value = player[5] if len(player) > 5 else ''
-                self.ethnicity_info.value = player[6] if len(player) > 6 else ''
-                if len(player) > 7:
-                    self.skin_info.value = player[7] if len(player) > 7 else ''
-                    self.club_info.value = player[9] if len(player) > 9 else ''
-                    self.age_info.value = player[10] if len(player) > 10 else ''
-                    self.height_info.value = player[11] if len(player) > 11 else ''
-                    self.weight_info.value = player[12] if len(player) > 12 else ''
-                    self.isNewGAN_info.value = player[13] if len(player) > 13 else ''
-            else:
-                self.logger.warning(f"Player details not found in RTF data for UID: {uid}")
+        player = self.player_service.find_rtf_player(uid, rtf_data)
+        if player:
+            # [0]UID, [1]primary_nat, [2]sec_nat, [3]name, [4]hair_length,
+            # [5]hair_color, [6]ethnicity_code, [7]skin_code, [8]face_id, [9]club,
+            # [10]age, [11]height, [12]weight, [13]is_NewGAN
+            self.nat1_info.value = player[1] if len(player) > 1 else ''
+            self.nat2_info.value = player[2] if len(player) > 2 else ''
+            self.name_info.value = player[3] if len(player) > 3 else ''
+            self.hair_info.value = player[4] if len(player) > 4 else ''
+            self.hair_color_info.value = player[5] if len(player) > 5 else ''
+            self.ethnicity_info.value = player[6] if len(player) > 6 else ''
+            if len(player) > 7:
+                self.skin_info.value = player[7] if len(player) > 7 else ''
+                self.club_info.value = player[9] if len(player) > 9 else ''
+                self.age_info.value = player[10] if len(player) > 10 else ''
+                self.height_info.value = player[11] if len(player) > 11 else ''
+                self.weight_info.value = player[12] if len(player) > 12 else ''
+                self.isNewGAN_info.value = player[13] if len(player) > 13 else ''
         else:
-            self.logger.warning("No RTF data available for previewing player details")
+            self.logger.warning(
+                f"Player details not found in RTF data for UID: {uid}" if rtf_data
+                else "No RTF data available for previewing player details")
 
     async def _replace_it(self, widget):
         uid = self.uid_info.value.strip()
         image_path = self.img_input.value.strip()
         self.logger.info(f"Replacing UID: {uid} with image: {image_path}")
-        # 使用正则表达式匹配路径
-        match = re.search(r"[\\/]+([^\\/]+)[\\/]+([^\\/]+)\.(?:png|jpg|jpeg)$", image_path)
-        image = None
-        image_pack = None
-        if match:
-            image_pack = match.group(1)  # 上一级文件夹名
-            image = match.group(2)        # 头像文件名（不含扩展名）
-        if uid and image_path and image and image_pack:
-            player = [uid, image_pack, image]
+        parsed = self.player_service.parse_image_path(image_path)  # (image_pack, image)
+        if uid and image_path and parsed:
+            image_pack, image = parsed
             try:
-                xml_parser = XmlParser()
-                xml_parser.single_replacement_in_xml(player, self.app.profile_manager.prf_cfg["img_dir"], self.app.profile_manager.logger, self.main_tab.save_backup.value)
-                # 更新缓存中的mapping_data
-                mapping_data = self.main_tab.replace_service.mapping_data
-                if mapping_data:
-                    for p in mapping_data:
-                        if p and len(p) > 0 and p[0] == uid:
-                            p[1] = image_pack
-                            p[2] = image
-                            self.logger.info(f"Updated mapping data for UID: {uid}")
-                            break
+                self.player_service.replace_single_face(
+                    uid, image_pack, image, self.main_tab.save_backup.value)
+                # 同步内存中的映射缓存
+                if self.player_service.update_mapping_cache(
+                        uid, image_pack, image, self.main_tab.replace_service.mapping_data):
+                    self.logger.info(f"Updated mapping data for UID: {uid}")
                 await self.app.show_info(f"Successfully replaced UID: {uid} with {image_pack}/{image}")
             except Exception as e:
                 await self.app.throw_error(f"Error replacing face for UID {uid}: {e}")
