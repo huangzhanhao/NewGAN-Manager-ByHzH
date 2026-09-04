@@ -7,7 +7,7 @@ name = "newganmanager"
 version = "1.4.4"
 description = "Football Manager NewGAN Replacement Tool"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12.10"
 license = {file = "LICENSE"}
 authors = [
     {name = "huangzhanhao"},
@@ -28,7 +28,7 @@ bundle = "com.fm"
 [tool.briefcase.app.newganmanager]
 formal_name = "NewGAN Manager"
 description = "Football Manager NewGAN Replacement Tool"
-icon = "src/newganmanager/resources/favicon.ico"
+icon = "src/newganmanager/resources/newganmanager"
 sources = ['src/newganmanager']
 requires = [
     "toga>=0.5.2",
