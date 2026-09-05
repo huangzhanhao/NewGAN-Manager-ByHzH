@@ -94,8 +94,9 @@ newgan.log
 # User configuration files
 src/newganmanager/.user/*.json
 src/newganmanager/.user/*.xml
-src/tests/testing_data/.user/*.json
-src/tests/testing_data/.user/*.xml
+
+# 测试夹具数据（含超大 RTF 样本）—— 暂不跟踪，项目重构完成后会重新生成测试代码与测试数据
+src/tests/testing_data/
 
 # User RTF exports (personal data, never commit)
 src/newganmanager/user_rtf/
@@ -106,8 +107,6 @@ src/newganmanager/data/
 # Keep template files
 !src/newganmanager/.user/No Profile.json
 !src/newganmanager/.user/default_cfg.json
-!src/tests/testing_data/.user/No Profile.json
-!src/tests/testing_data/.user/cfg.json
 
 # Temporary files
 *.tmp
