@@ -3,6 +3,7 @@ import os
 import shutil
 import sys
 import tempfile
+import unittest
 
 # 让测试能直接 import core 模块（与 CI 的 unittest discover -s src/tests 兼容）
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "newganmanager"))
@@ -12,7 +13,15 @@ TESTING_DATA = os.path.join(TESTS_DIR, "testing_data")
 
 
 def copy_testing_data():
-    """把 testing_data 完整复制到临时目录，返回副本路径；调用方负责清理"""
+    """把 testing_data 完整复制到临时目录，返回副本路径；调用方负责清理
+
+    testing_data 目前不纳入版本控制，缺失时把相关用例记为跳过而非失败。
+    """
+    if not os.path.isdir(TESTING_DATA):
+        raise unittest.SkipTest(
+            "testing_data 未纳入版本控制（暂不跟踪），跳过依赖该夹具的用例；"
+            "重建测试数据后自动恢复"
+        )
     tmp = tempfile.mkdtemp(prefix="newgan_test_")
     dst = os.path.join(tmp, "testing_data")
     shutil.copytree(TESTING_DATA, dst)
