@@ -13,8 +13,8 @@
 每组包含该目录对应的 RTF 名单与 config.xml 快照。
 
 JSON 工具（静态方法）：
-- `load_config(path)` — 读 JSON，文件缺失抛 `FileNotFoundError`
-- `save_config(path, data)` — 写 JSON（UTF-8、`ensure_ascii=False`、缩进 2）
+- `load_config(path)` — 读 JSON，文件缺失抛 `FileNotFoundError`；文件损坏（`JSONDecodeError`）时备份为 `path.corrupt` 后按缺失处理（调用方回退默认配置）
+- `save_config(path, data)` — 原子写入：先写同目录 `path.tmp` 再 `os.replace` 替换（UTF-8、`ensure_ascii=False`、缩进 2），进程中断不会留下截断文件
 - `get_latest_prf(path)` — 从 `.user/cfg.json` 的 `Profile` 字典中取值为 `true` 的名字（激活 Profile）
 
 Profile 管理：
@@ -364,10 +364,10 @@ PlayerViewer --> PlayerService : 查询/换脸
 
 ## Improvements / 待改进
 
-- **测试**：`src/tests` 目前只有测试基架，需补 ProfileManager（组增删切、多目录快照交换）、RTF 解析（英文 / 中文 / 14 列 / 随机人过滤）、映射（三种模式、图片池优先级）、XML 读写与备份轮换的断言。
-- **CI**：artifact 中的版本号需与 `version` 文件同步；补 `ruff check src/`。
+- **测试**：✅ 已完成基础断言（`test_rtf_parser.py`：英文 / 中文翻译 / 14 列 / 随机人过滤；`test_face_mapper.py`：correct_ethnic 0-10 全分支 / Generate 映射；`test_profile_manager.py`：原子写入 / 损坏回退），CI 以 `python -m unittest discover -s src/tests -p 'test*.py'` 运行。仍待补：映射另外两种模式、XML 读写与备份轮换、ProfileManager 组增删切与多目录快照交换。
+- **CI**：✅ 已建 `.github/workflows/test.yml`（push / PR 触发 unittest，Python 3.12.10，`PYTHONPATH=src`，测试仅依赖标准库故不安装 requirements）。待补：artifact 版本号与 `version` 文件同步、`ruff check src/`。
 - **更新检查**：`check_for_update()` 指向上游仓库，需要改为本分支 Release 并接入菜单。
 - **报告功能**：`Reporter` 未接入 UI，webhook 地址需移入配置文件而非硬编码。
 - **路径处理**：替换流程周边仍有 `str + "/..."` 拼接，建议统一为 `pathlib.Path` / `os.path.join`，以改善含空格、中文路径的兼容性。
-- **原子写入**：`save_config` 为直接覆盖写，进程崩溃会留下损坏 JSON；建议临时文件 + `os.replace`，`load_config` 捕获 `JSONDecodeError` 回退默认配置。
+- ~~**原子写入**：`save_config` 为直接覆盖写，进程崩溃会留下损坏 JSON。~~ ✅ 已实现（2026-09-01）：`save_config` 临时文件 + `os.replace` 原子替换；`load_config` 捕获 `JSONDecodeError` 时备份 `.corrupt` 后回退默认配置。
 - **切换竞态**：替换任务运行中切换 Profile 会互相覆盖 `config.xml`，建议替换期间禁用 Profile 下拉与组删除。

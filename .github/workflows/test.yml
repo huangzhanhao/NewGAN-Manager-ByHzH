@@ -1,0 +1,28 @@
+name: Tests
+
+# 最小质量门禁：push / PR 时自动运行单元测试。
+# 测试仅依赖标准库（RtfParser/FaceMapper/XmlParser/ProfileManager 无第三方依赖），
+# 故无需 pip install；requirements.txt 含 toga-winforms、pythonnet 等 Windows
+# 专属包，在 Linux runner 上无法安装，安装完整依赖会直接失败。
+# Python 版本与本地虚拟环境一致（.venv/pyvenv.cfg: version = 3.12.10）。
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12.10"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run unit tests
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s src/tests -p "test*.py" -v

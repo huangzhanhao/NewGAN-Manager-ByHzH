@@ -3,32 +3,34 @@ import logging.handlers
 import queue
 import os
 import asyncio
+from typing_extensions import override
 
 class UIHandler(logging.Handler):
     """Handler that forwards log records to a UI queue."""
-    def __init__(self, ui_queue: asyncio.Queue, loop):
+    def __init__(self, ui_queue: asyncio.Queue[logging.LogRecord], loop: asyncio.AbstractEventLoop):
         super().__init__()
-        self.ui_queue = ui_queue
-        self.loop = loop
+        self.ui_queue: asyncio.Queue[logging.LogRecord] = ui_queue
+        self.loop: asyncio.AbstractEventLoop = loop
 
-    def emit(self, record: logging.LogRecord):
+    @override
+    def emit(self, record: logging.LogRecord) -> None:
         try:
             # 使用线程安全的方式将记录放入异步队列
-            asyncio.run_coroutine_threadsafe(self.ui_queue.put(record), self.loop)
+            _ = asyncio.run_coroutine_threadsafe(self.ui_queue.put(record), self.loop)
         except Exception:
             self.handleError(record)
 
 class NewGanLogManager:
-    def __init__(self, root_dir) -> None:
-        self.log_file = os.path.join(str(root_dir), "newgan.log")
-        self.max_bytes = int(10 * 1024 * 1024)
-        self.backup_count = int(3)
-        self.log_level = logging.DEBUG
-        self.log_queue = queue.Queue(-1)
-        self.ui_queue = asyncio.Queue(-1)  # 使用 asyncio 队列用于UI日志记录
-        self.formatter = logging.Formatter("| %(asctime)s | %(name)s | %(levelname)s | %(module)s:%(lineno)d - %(message)s",
+    def __init__(self, root_dir: str) -> None:
+        self.log_file: str = os.path.join(str(root_dir), "newgan.log")
+        self.max_bytes: int = int(10 * 1024 * 1024)
+        self.backup_count: int = int(3)
+        self.log_level: int = logging.DEBUG
+        self.log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
+        self.ui_queue: asyncio.Queue[logging.LogRecord] = asyncio.Queue(-1)  # 使用 asyncio 队列用于UI日志记录
+        self.formatter: logging.Formatter = logging.Formatter("| %(asctime)s | %(name)s | %(levelname)s | %(module)s:%(lineno)d - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",)
-        self.listener = None
+        self.listener: logging.handlers.QueueListener | None = None
         
         try:
             # 初始化日志系统
@@ -80,7 +82,7 @@ class NewGanLogManager:
         )
         self.listener.start()
     
-    def get_ui_queue(self) -> asyncio.Queue:
+    def get_ui_queue(self) -> asyncio.Queue[logging.LogRecord]:
         """获取UI队列，供LogTab使用"""
         return self.ui_queue
     

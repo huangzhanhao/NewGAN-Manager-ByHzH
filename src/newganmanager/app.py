@@ -6,6 +6,10 @@ import shutil
 import logging
 import webbrowser
 import requests
+from typing import cast
+from toga.command import ActionHandler
+from collections.abc import Coroutine
+from typing_extensions import override
 from .core.ProfileManager import ProfileManager
 from .app_log_tab import LogTab
 from .app_main_tab import MainTab
@@ -27,11 +31,11 @@ class NewGANManager(toga.App):
             home_page="https://github.com/huangzhanhao/NewGAN-Manager-ByHzH",
         )
 
-        self.logger = logging.getLogger("NewGAN App")
+        self.logger: logging.Logger = logging.getLogger("NewGAN App")
         # 用户数据目录：优先应用目录下 data/（便携式，用户好找）；
         # 应用目录不可写时回退平台标准数据目录（paths.data）
-        self.user_data_dir = self._resolve_user_data_dir()
-        self.log_manager = NewGanLogManager(self.user_data_dir)
+        self.user_data_dir: str = self._resolve_user_data_dir()
+        self.log_manager: NewGanLogManager = NewGanLogManager(self.user_data_dir)
         # Initialize instance attributes with type annotations
         # 使用类型注解初始化实例属性
         self.facepack_dirs: set[str] = set()
@@ -44,6 +48,7 @@ class NewGANManager(toga.App):
         self.option_container: toga.OptionContainer | None = None
         self.main_window: toga.MainWindow | None = None
 
+    @override
     def startup(self):
         """
         Construct and show the Toga application.
@@ -59,6 +64,13 @@ class NewGANManager(toga.App):
         # Setup application data and profile
         # 设置应用程序数据和配置文件
         self._setup_application_data()
+        # 依赖收窄：_setup_application_data 失败时会直接抛错，此处仅兜底校验非空，
+        # 既避免把 None 传给下游服务，也让类型检查器确定 profile_manager 非空
+        profile_manager = self.profile_manager
+        if profile_manager is None:
+            raise RuntimeError(
+                "ProfileManager is not initialized: application data setup failed"
+            )
 
         # Define facepack directories set and mode info dictionary
         # 定义头像包目录集合和模式说明字典
@@ -93,7 +105,7 @@ class NewGANManager(toga.App):
         # self.hook = "https://discord.com/api/webhooks/796137178328989768/ETMNtPVb-PHuZPayC5G5MZD24tdDi5jmG6jAgjZXg0FDOXjy-VIabATXPco05qLIr4ro"
 
         # 创建业务服务（供各标签页回调使用）
-        self.profile_service = ProfileService(self.profile_manager, logger=self.logger)
+        self.profile_service = ProfileService(profile_manager, logger=self.logger)
 
         # Create tab
         self.main_tab = MainTab(self)
@@ -121,6 +133,7 @@ class NewGANManager(toga.App):
         # 记录应用启动信息
         self.logger.info("Starting Application\n-------------------------------------------")
         self.logger.info(f"Application Path: {str(self.paths.app)}")
+
     def _resolve_user_data_dir(self):
         """确定用户数据目录：
         优先使用应用目录下的 data/（便携式，用户数据随安装目录走、好找）；
@@ -131,7 +144,7 @@ class NewGANManager(toga.App):
         try:
             probe = os.path.join(app_dir, ".write_probe")
             with open(probe, "w", encoding="utf-8") as fp:
-                fp.write("")
+                _ = fp.write("")
             os.remove(probe)
             return os.path.join(app_dir, "data")
         except OSError:
@@ -161,7 +174,7 @@ class NewGANManager(toga.App):
                     if os.path.normpath(legacy) == os.path.normpath(user_dir):
                         continue
                     if os.path.isfile(os.path.join(legacy, "cfg.json")):
-                        shutil.copytree(legacy, user_dir, dirs_exist_ok=True)
+                        _ = shutil.copytree(legacy, user_dir, dirs_exist_ok=True)
                         self.logger.info(f"Migrated user data from {legacy} to {user_dir}")
                         break
 
@@ -171,13 +184,13 @@ class NewGANManager(toga.App):
                     src = os.path.join(app_user_dir, fname)
                     dst = os.path.join(user_dir, fname)
                     if os.path.isfile(src) and not os.path.isfile(dst):
-                        shutil.copyfile(src, dst)
+                        _ = shutil.copyfile(src, dst)
                         self.logger.info(f"Copied default template: {fname}")
 
             # 3) default_cfg.json → cfg.json（用户配置文件的正式名）
             default_cfg = os.path.join(user_dir, "default_cfg.json")
             if os.path.isfile(default_cfg) and not os.path.isfile(user_config_path):
-                shutil.copyfile(default_cfg, user_config_path)
+                _ = shutil.copyfile(default_cfg, user_config_path)
                 self.logger.info("Created cfg.json from default_cfg.json template")
 
             # Load current profile
@@ -200,46 +213,46 @@ class NewGANManager(toga.App):
         设置应用程序菜单
         """
 
-        def open_usage_links(command: toga.Command, **kwargs) -> bool:
-            webbrowser.open("https://www.youtube.com/watch?v=iJqZNp0nomM")
-            webbrowser.open("https://www.bilibili.com/video/BV1ew411h759")
+        def open_usage_links(_command: toga.Command, **_kwargs: object) -> bool:
+            _ = webbrowser.open("https://www.youtube.com/watch?v=iJqZNp0nomM")
+            _ = webbrowser.open("https://www.bilibili.com/video/BV1ew411h759")
             return True
 
         usage = toga.Command(
-            open_usage_links,
+            cast(ActionHandler, open_usage_links),
             text="User Guide",
             group=toga.Group.HELP,
             section=1,
         )
 
-        def open_troubleshooting(command, **kwargs):
-            webbrowser.open("https://github.com/Maradonna90/NewGAN-Manager/wiki/Troubleshooting")
+        def open_troubleshooting(_command: toga.Command, **_kwargs: object) -> bool:
+            _ = webbrowser.open("https://github.com/Maradonna90/NewGAN-Manager/wiki/Troubleshooting")
             return True
 
         troubleshooting = toga.Command(
-            open_troubleshooting,
+            cast(ActionHandler, open_troubleshooting),
             text="Troubleshooting",
             group=toga.Group.HELP,
             section=2,
         )
 
-        def open_faq(command, **kwargs):
-            webbrowser.open("https://github.com/Maradonna90/NewGAN-Manager/wiki/FAQ")
+        def open_faq(_command: toga.Command, **_kwargs: object) -> bool:
+            _ = webbrowser.open("https://github.com/Maradonna90/NewGAN-Manager/wiki/FAQ")
             return True
 
         faq = toga.Command(
-            open_faq,
+            cast(ActionHandler, open_faq),
             text="FAQ",
             group=toga.Group.HELP,
             section=3,
         )
 
-        def open_discord(command, **kwargs):
-            webbrowser.open("https://discord.gg/UfRpJVc")
+        def open_discord(_command: toga.Command, **_kwargs: object) -> bool:
+            _ = webbrowser.open("https://discord.gg/UfRpJVc")
             return True
 
         discord = toga.Command(
-            open_discord,
+            cast(ActionHandler, open_discord),
             text="Discord",
             group=toga.Group.HELP,
             section=4,
@@ -247,23 +260,23 @@ class NewGANManager(toga.App):
 
         self.commands.add(usage, troubleshooting, discord, faq)
 
-    def run_async(self, coro):
+    def run_async(self, coro: Coroutine[object, object, object]) -> asyncio.Task[object]:
         """在异步循环中执行协程（fire-and-forget），供同步回调触发 async 对话框"""
         return asyncio.create_task(coro)
 
-    async def throw_error(self, msg):
+    async def throw_error(self, msg: str) -> None:
         self.logger.error(f"Error window: {msg}")
         dialog = toga.ErrorDialog("Error", msg)
         if self.main_window is not None:
             await self.main_window.dialog(dialog)
 
-    async def show_info(self, msg):
+    async def show_info(self, msg: str) -> None:
         self.logger.info(f"Info window: {msg}")
         dialog = toga.InfoDialog("Info", msg)
         if self.main_window is not None:
             await self.main_window.dialog(dialog)
 
-    async def ask_confirm(self, title, message):
+    async def ask_confirm(self, title: str, message: str) -> bool:
         """弹确认对话框，返回用户是否确认（供业务层注入）"""
         self.logger.debug(f"Ask confirm: {title}")
         dialog = toga.QuestionDialog(title, message)
@@ -271,6 +284,7 @@ class NewGANManager(toga.App):
             return await self.main_window.dialog(dialog)
         return False
 
+    @override
     def on_exit(self):
         """当应用程序退出时执行"""
         if hasattr(self, "logger"):
@@ -297,7 +311,7 @@ class NewGANManager(toga.App):
         try:
             if r.text.strip() != self.version:
                 await self.show_info("There is a new version. Please Update!")
-                webbrowser.open(
+                _ = webbrowser.open(
                     "https://github.com/Maradonna90/NewGAN-Manager/releases/latest"
                 )
         except AttributeError:
